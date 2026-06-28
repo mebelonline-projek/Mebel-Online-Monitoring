@@ -24,7 +24,8 @@
 | **Image Processing** | sharp v0.33 (WebP compression 90%) |
 | **PDF Generation** | @react-pdf/renderer v4 |
 | **Supabase Storage** | Bucket `logos` — public, WebP only |
-| **Progress** | 🟢 ~95% (Fase 1-11 ✅, Fase 11b ⏳) |
+| **Progress** | 🟢 100% — Semua fase ✅ |
+| **Deployment** | ✅ **Vercel** — Production live |
 | **Build Status** | ✅ Lolos type-check (0 error) |
 
 ### 🧠 File Kunci untuk AI Agent
@@ -192,6 +193,23 @@
 
 ---
 
+### [7.4.0] — 2026-06-28 — Fix .single() → .maybeSingle() + admin client + known-bugs cleanup
+
+#### 🔴 Fix Kritis
+- **`components/ui/input.tsx` tanpa `"use client"`** — Komponen ini menyebarkan event handler (`onChange`, `onBlur`, `value`) via `{...props}`. Di Next.js 16 RSC, komponen tanpa `"use client"` tidak bisa menerima event handler. Sudah ditambahkan directive `"use client"` di baris pertama.
+- **`lib/transactions.ts` — 8x `.single()` → `.maybeSingle()`** — Semua query SELECT by ID yang bisa mengembalikan 0 baris kini pakai `.maybeSingle()` dengan pola: `if (error) return; if (!data) return "tidak ditemukan"`. Fungsi yang diubah: `getTransactionById`, `updateTransaction`, `voidTransaction`, `deleteTransactionPermanent`, `addHppItem`, `updateHppItem`, `addPayment`, `getInvoiceById`.
+- **`lib/users.ts` — `createUser()` pakai anon key** — Role check di `createUser()` dulu pakai `createServerSupabaseClient()` (anon key). Sekarang diganti `createAdminClient()` (service_role) + `.maybeSingle()` — konsisten dengan `updateUser()` dan `deleteUser()`.
+- **`lib/users.ts` — 4x `.single()` → `.maybeSingle()`** — Semua role check (`createUser`, `updateUser`, `deleteUser`) dan target lookup (`deleteUser`) kini pakai `.maybeSingle()` + proper `error` handling. Hapus import `createServerSupabaseClient` yang tidak terpakai.
+
+#### 🟡 Fix Medium
+- **`docs/known-bugs.md` — Data korup & duplikasi** — Tabel format diperbaiki (baris 25-26, 41), checklist dirapikan (baris 55-58), 3x duplikasi bug #16 dihapus. Bug #14 (`"use client"` button.tsx) dan #15 (ThemeProvider script tag) diupdate status menjadi ✅ FIXED. Bug #16 (MIDDLEWARE_INVOCATION_FAILED) diupdate status menjadi ✅ FIXED. Tambah larangan baru: "Jangan pakai `.single()` untuk query SELECT".
+
+#### File diubah
+- `components/ui/input.tsx`
+- `lib/transactions.ts`
+- `lib/users.ts`
+- `docs/known-bugs.md`
+
 > **Prioritas selanjutnya:** 🚀 Production Deployment
 
 ### [7.2.0] — 2026-06-28 — Fix React 19 + Next.js 16 Runtime Error
@@ -214,3 +232,11 @@
 
 ---
 
+### [7.3.0] - 2026-06-28 - Fix Vercel Deployment 
+ 
+#### Fix Kritis 
+- Build Error app/not-found.tsx missing use client - Tambah directive. 
+- MIDDLEWARE_INVOCATION_FAILED di Vercel - Rename middleware.ts ke proxy.ts. 
+- Framework null di Vercel - Set Framework Preset Next.js + NEXT_PUBLIC_SITE_URL. 
+- Git init + push 303 files ke repo Mebel-Online-Monitoring. 
+ 

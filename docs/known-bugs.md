@@ -16,15 +16,15 @@
 | 5 | **`auth.uid()` undefined** di fungsi `get_user_role()` | `search_path` diubah ke `''` — fungsi tidak bisa akses schema `auth` | **JANGAN** ubah `search_path` fungsi RLS | `supabase/migration.sql` |
 | 6 | **Auto-invoice number `INV-` ada di tabel `transactions`** | Dulu invoice_number dan transaction_number tercampur | Migrasi V2: rename kolom + buat tabel invoices terpisah | `supabase/migrate_v2.sql` |
 | 7 | **Error NOT NULL constraint saat hapus FK** | FK tidak pakai ON DELETE CASCADE | Tambah ON DELETE CASCADE ke FK `transaction_payments` dan `hpp_items` | `supabase/migrate_v2.sql` |
-| 8 | **Error 404 pada Cetak Nota & Pelunasan** | `notFound()` dipanggil untuk SEMUA error (termasuk error sementara). `.single()` menghasilkan error jika data tidak ada. | Ganti `.single()` → `.maybeSingle()`, pisahkan error koneksi vs data tidak ditemukan, buat custom `not-found.tsx` + `error.tsx` | `app/(app)/transaksi/[id]/invoice/page.tsx`, `app/(app)/transaksi/[id]/pelunasan/page.tsx`, `app/not-found.tsx`, `app/(app)/transaksi/[id]/invoice/error.tsx` |
-| 9 | **Build cache korupsi (`next_corrupted`)** | Korupsi build cache turbopack menyebabkan `ensure-page` gagal untuk halaman tertentu | Bersihkan `.next`, `next_corrupted`, dan `node_modules/.cache` lalu restart dev server | Build cache |
-| 10 | **Edit transaksi hapus semua riwayat pembayaran** | `updateTransaction()` DELETE semua `transaction_payments` lalu INSERT baru. Skenario: transaksi DP dengan cicilan → edit → cicilan hilang. | UPDATE payment pertama yang ada, jangan DELETE+INSERT. Guardrail: blokir edit jika >1 payment atau MENUNGGU_PELUNASAN. | `lib/transactions.ts` |
-| 11 | **Query `users` dengan anon key + `.single()`** | Query ke `public.users` pakai regular client (anon key). Jika RLS blokir → `.single()` throw error 500. | Semua query `users` tanpa admin client → `.maybeSingle()`. Fallback null = pesan error aman, bukan crash. | `lib/transactions.ts`, `lib/operational-costs.ts`, `lib/supabase-server.ts` |
-| 12 | **Stat cards transaksi tidak akurat** | Card "Lunas", "DP", dll menghitung dari data halaman saat ini (maks 10 item), bukan total seluruh transaksi. | Fetch 4 count query terpisah di server page, kirim sebagai props ke client. | `app/(app)/transaksi/page.tsx`, `components/transactions/transaction-list-client.tsx` |
-| 13 | **Filter biaya operasional pakai `created_at`** | Biaya difilter berdasarkan tanggal input (`created_at`), bukan periode biaya (`period_start`/`period_end`). Biaya Januari yang diinput Februari muncul di bulan Februari. | Ganti ke overlap query: `lte("period_start", end) & gte("period_end", start)`. | `app/(app)/operasional/page.tsx` |
-| | 14 | **Runtime Error — Event handler di Server Component** | `components/ui/button.tsx` tidak memiliki directive `"use client"`. Di Next.js 16 (RSC), component yang menerima event handler (`onClick`, dll) Wajib Client Component. | Tambah `"use client"` di baris pertama komponen. | `components/ui/button.tsx` |
-| | 15 | **Console Error — Script tag di ThemeProvider** | Library `next-themes` v0.4.6 inject `<script>` tag. React 19 memberi warning. | Ganti dengan custom ThemeProvider (React Context) + `next/script` untuk init tema. | `providers/theme-provider.tsx`, `app/layout.tsx` |
-
+| 8 | **Error 404 pada Cetak Nota & Pelunasan** | `notFound()` dipanggil untuk SEMUA error (termasuk error sementara). `.single()` menghasilkan error jika data tidak ada. | Ganti `.single()` → `.maybeSingle()`, pisahkan error koneksi vs data tidak ditemukan | `app/(app)/transaksi/[id]/invoice/`, `app/(app)/transaksi/[id]/pelunasan/` |
+| 9 | **Build cache korupsi (`next_corrupted`)** | Korupsi build cache turbopack menyebabkan `ensure-page` gagal | Bersihkan `.next` dan `node_modules/.cache` lalu restart dev server | Build cache |
+| 10 | **Edit transaksi hapus semua riwayat pembayaran** | `updateTransaction()` DELETE semua `transaction_payments` lalu INSERT baru | UPDATE payment pertama yang ada, jangan DELETE+INSERT. Guardrail: blokir edit jika >1 payment atau MENUNGGU_PELUNASAN. | `lib/transactions.ts` |
+| 11 | **Query `users` dengan anon key + `.single()`** | Query ke `public.users` pakai regular client (anon key). RLS blokir → `.single()` throw error 500. | Semua query `users` tanpa admin client → `.maybeSingle()`. Fallback null = pesan error aman, bukan crash. | `lib/transactions.ts`, `lib/operational-costs.ts`, `lib/supabase-server.ts` |
+| 12 | **Stat cards transaksi tidak akurat** | Card "Lunas", "DP", dll menghitung dari data halaman saat ini (maks 10 item) | Fetch 4 count query terpisah di server page, kirim sebagai props ke client. | `app/(app)/transaksi/page.tsx`, `components/transactions/transaction-list-client.tsx` |
+| 13 | **Filter biaya operasional pakai `created_at`** | Biaya difilter berdasarkan tanggal input, bukan periode biaya | Ganti ke overlap query: `lte("period_start", end) & gte("period_end", start)` | `app/(app)/operasional/page.tsx` |
+| 14 | **Runtime Error — Event handler di Server Component** | `components/ui/button.tsx` tidak memiliki directive `"use client"`. Di Next.js 16, komponen dengan event handler wajib Client Component. | ✅ **FIXED** — `"use client"` sudah ditambahkan di semua UI components (`button.tsx`, `input.tsx`, dll) | `components/ui/button.tsx`, `components/ui/input.tsx` |
+| 15 | **Console Error — Script tag di ThemeProvider** | Library `next-themes` v0.4.6 inject `<script>` tag. React 19 memberi warning. | ✅ **FIXED** — Sudah diganti custom ThemeProvider (`providers/theme-provider.tsx`) + `next/script` di layout | `providers/theme-provider.tsx`, `app/layout.tsx` |
+| 16 | **MIDDLEWARE_INVOCATION_FAILED 500 di Vercel** | Next.js 16 deprecate `middleware.ts`, export function `middleware` tidak dikenali | ✅ **FIXED** — Sudah rename ke `proxy.ts` dengan export function `proxy` | `proxy.ts` |
 
 ---
 
@@ -37,8 +37,9 @@
 | **Jangan rewrite komponen yang sudah jalan** | Fokus selesaikan yang belum ada |
 | **Jangan hapus properti `category` di insert `operational_costs`** | Kolom NOT NULL, pasti error |
 | **Jangan rename kolom database tanpa migrasi SQL** | Schema sudah final, ubah kode bukan DB |
-| **Jangan DELETE+INSERT payment saat edit transaksi** | Hapus riwayat pembayaran — data keuangan hilang. UPDATE saja payment yang ada. |
-| | **Jangan lupa `\"use client\"` di komponen dengan event handler** | Di Next.js 16, komponen tanpa `\"use client\"` adalah Server Component — tidak bisa terima `onClick`, `onChange`, dll. |
+| **Jangan DELETE+INSERT payment saat edit transaksi** | Hapus riwayat pembayaran — UPDATE saja payment yang ada |
+| **Jangan lupa `"use client"` di komponen dengan event handler** | Server Component tidak bisa terima `onClick`, `onChange`, dll |
+| **Jangan pakai `.single()` untuk query SELECT** | Ganti ke `.maybeSingle()` + pisahkan error vs data kosong |
 
 ---
 
@@ -51,7 +52,6 @@ Sebelum selesai coding, cek:
 - [ ] Apakah ada perubahan `search_path` di fungsi SQL? (**JANGAN**)
 - [ ] Apakah ada `console.log` yang perlu dihapus?
 - [ ] Apakah semua komponen dengan event handler (`onClick`, `onChange`, dll) sudah punya `"use client"`?
-
 - [ ] Apakah type-check lolos? (`npm run type-check`)
 - [ ] Apakah ada hardcode string yang seharusnya di `config/`?
 - [ ] Apakah query `.single()` di Server Component aman? Ganti ke `.maybeSingle()` + pisahkan error vs notFound

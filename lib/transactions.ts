@@ -218,10 +218,14 @@ export async function getTransactionById(id: string) {
         transaction_payments (*)
       `)
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
     if (error) {
       return { success: false, message: error.message };
+    }
+
+    if (!data) {
+      return { success: false, message: "Transaksi tidak ditemukan" };
     }
 
     return {
@@ -256,9 +260,13 @@ export async function updateTransaction(
       .from("transactions")
       .select("id, transaction_number, payment_type, status")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (checkError || !existing) {
+    if (checkError) {
+      return { success: false, message: checkError.message };
+    }
+
+    if (!existing) {
       return { success: false, message: "Transaksi tidak ditemukan" };
     }
 
@@ -401,9 +409,13 @@ export async function voidTransaction(
       .from("transactions")
       .select("status, transaction_number")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (checkError || !existing) {
+    if (checkError) {
+      return { success: false, message: checkError.message };
+    }
+
+    if (!existing) {
       return { success: false, message: "Transaksi tidak ditemukan" };
     }
 
@@ -465,9 +477,13 @@ export async function deleteTransactionPermanent(
       .from("transactions")
       .select("id, transaction_number")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (checkError || !existing) {
+    if (checkError) {
+      return { success: false, message: checkError.message };
+    }
+
+    if (!existing) {
       return { success: false, message: "Transaksi tidak ditemukan" };
     }
 
@@ -539,9 +555,13 @@ export async function addHppItem(
       .from("transactions")
       .select("id, status, transaction_number")
       .eq("id", parsed.data.transaction_id)
-      .single();
+      .maybeSingle();
 
-    if (txError || !tx) {
+    if (txError) {
+      return { success: false, message: txError.message };
+    }
+
+    if (!tx) {
       return { success: false, message: "Transaksi tidak ditemukan" };
     }
 
@@ -601,9 +621,13 @@ export async function updateHppItem(
       .from("hpp_items")
       .select("id")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (checkError || !existing) {
+    if (checkError) {
+      return { success: false, message: checkError.message };
+    }
+
+    if (!existing) {
       return { success: false, message: "Item HPP tidak ditemukan" };
     }
 
@@ -686,9 +710,13 @@ export async function addPayment(
       .from("transactions")
       .select("id, status, final_price, payment_type, transaction_number")
       .eq("id", transactionId)
-      .single();
+      .maybeSingle();
 
-    if (txError || !tx) {
+    if (txError) {
+      return { success: false, message: txError.message };
+    }
+
+    if (!tx) {
       return { success: false, message: "Transaksi tidak ditemukan" };
     }
 
@@ -1027,9 +1055,11 @@ export async function getInvoiceById(id: string) {
         )
       `)
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
     if (error) return { success: false, message: error.message };
+
+    if (!data) return { success: false, message: "Invoice tidak ditemukan" };
 
     return { success: true, data: data as unknown as InvoiceRow };
   } catch (error) {

@@ -1,6 +1,6 @@
 "use server";
 
-import { createServerSupabaseClient, getCurrentUser } from "@/lib/supabase-server";
+import { getCurrentUser } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import type { ActionState } from "@/types/common";
 import { createClient } from "@supabase/supabase-js";
@@ -57,16 +57,16 @@ export async function createUser(formData: {
     const user = await getCurrentUser();
     if (!user) return { success: false, message: "Anda harus login" };
 
-    const supabase = await createServerSupabaseClient();
+    const adminClient = createAdminClient();
 
     // Cek role — hanya OWNER
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await adminClient
       .from("users")
       .select("role")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (!profile || profile.role !== "OWNER") {
+    if (profileError || !profile || profile.role !== "OWNER") {
       return { success: false, message: "Hanya Owner yang bisa menambah user" };
     }
 
@@ -82,7 +82,6 @@ export async function createUser(formData: {
     }
 
     // Buat user lewat Auth admin (skip email confirmation)
-    const adminClient = createAdminClient();
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
       email: formData.email,
       password: formData.password,
@@ -134,13 +133,13 @@ export async function updateUser(
     const adminClient = createAdminClient();
 
     // Cek role — pakai admin client biar bisa baca users
-    const { data: profile } = await adminClient
+    const { data: profile, error: profileError } = await adminClient
       .from("users")
       .select("role")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (!profile || profile.role !== "OWNER") {
+    if (profileError || !profile || profile.role !== "OWNER") {
       return { success: false, message: "Hanya Owner yang bisa mengubah user" };
     }
 
@@ -177,13 +176,13 @@ export async function deleteUser(id: string): Promise<ActionState> {
     const adminClient = createAdminClient();
 
     // Cek role
-    const { data: profile } = await adminClient
+    const { data: profile, error: profileError } = await adminClient
       .from("users")
       .select("role")
       .eq("id", user.id)
-      .single();
+      .maybeSingle();
 
-    if (!profile || profile.role !== "OWNER") {
+    if (profileError || !profile || profile.role !== "OWNER") {
       return { success: false, message: "Hanya Owner yang bisa menghapus user" };
     }
 
@@ -193,13 +192,13 @@ export async function deleteUser(id: string): Promise<ActionState> {
     }
 
     // Dapatkan nama user untuk pesan
-    const { data: targetUser } = await adminClient
+    const { data: targetUser, error: targetError } = await adminClient
       .from("users")
       .select("name, email")
       .eq("id", id)
-      .single();
+      .maybeSingle();
 
-    if (!targetUser) {
+    if (targetError || !targetUser) {
       return { success: false, message: "User tidak ditemukan" };
     }
 
