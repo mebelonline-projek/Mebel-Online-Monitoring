@@ -9,6 +9,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
@@ -64,11 +65,13 @@ interface Props {
   totalPages: number;
   bulan: string;
   profileRole: string;
+  distinctCategories: string[];
 }
 
 type CostForm = {
   name: string;
   amount: string;
+  category: string;
 };
 
 export function OperationalCostListClient({
@@ -78,6 +81,7 @@ export function OperationalCostListClient({
   totalPages,
   bulan,
   profileRole,
+  distinctCategories,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -86,7 +90,7 @@ export function OperationalCostListClient({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingCost, setEditingCost] = useState<OperationalCostRow | null>(null);
   const [deletingCost, setDeletingCost] = useState<OperationalCostRow | null>(null);
-  const [form, setForm] = useState<CostForm>({ name: "", amount: "" });
+  const [form, setForm] = useState<CostForm>({ name: "", amount: "", category: "" });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -101,7 +105,7 @@ export function OperationalCostListClient({
   };
 
   const resetForm = () => {
-    setForm({ name: "", amount: "" });
+    setForm({ name: "", amount: "", category: "" });
     setFormErrors({});
     setEditingCost(null);
   };
@@ -113,7 +117,7 @@ export function OperationalCostListClient({
 
   const openEditModal = (cost: OperationalCostRow) => {
     setEditingCost(cost);
-    setForm({ name: cost.name, amount: cost.amount.toString() });
+    setForm({ name: cost.name, amount: cost.amount.toString(), category: cost.category || "" });
     setFormErrors({});
     setDialogOpen(true);
   };
@@ -147,6 +151,7 @@ export function OperationalCostListClient({
       const payload = {
         name: form.name,
         amount: Number(form.amount),
+        category: form.category || "LAINNYA",
       };
 
       if (editingCost) {
@@ -272,6 +277,7 @@ export function OperationalCostListClient({
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>Kategori</TableHead>
                     <TableHead>Nama Biaya</TableHead>
                     <TableHead>Jumlah</TableHead>
                     <TableHead>Tanggal</TableHead>
@@ -281,6 +287,11 @@ export function OperationalCostListClient({
                 <TableBody>
                   {initialCosts.map((cost) => (
                     <TableRow key={cost.id}>
+                      <TableCell>
+                        <Badge variant="secondary" className="text-xs">
+                          {cost.category || "LAINNYA"}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="font-semibold">{cost.name}</TableCell>
                       <TableCell className="font-semibold">{formatCurrency(cost.amount)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -383,6 +394,33 @@ export function OperationalCostListClient({
                 className={formErrors.amount ? "border-destructive" : ""}
               />
               {formErrors.amount && <p className="text-destructive text-xs">{formErrors.amount}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Kategori</label>
+              <Input
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                placeholder="Contoh: LISTRIK, SEWA (ketik manual atau pilih di bawah)"
+                className={formErrors.category ? "border-destructive" : ""}
+              />
+              {formErrors.category && <p className="text-destructive text-xs">{formErrors.category}</p>}
+              {distinctCategories.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {distinctCategories.map((cat) => (
+                    <Button
+                      key={cat}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setForm({ ...form, category: cat })}
+                    >
+                      {cat}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <DialogFooter className="gap-2 pt-2">

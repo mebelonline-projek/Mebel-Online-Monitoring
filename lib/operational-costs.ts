@@ -13,6 +13,7 @@ export interface OperationalCostRow {
   id: string;
   name: string;
   amount: number;
+  category: string;
   created_at: string;
 }
 
@@ -43,7 +44,7 @@ export async function createOperationalCost(
       .insert({
         name: parsed.data.name,
         amount: parsed.data.amount,
-        category: "LAINNYA",
+        category: parsed.data.category || "LAINNYA",
         period_start: now,
         period_end: now,
         created_by: user.id,
@@ -101,6 +102,7 @@ export async function updateOperationalCost(
       .update({
         name: parsed.data.name,
         amount: parsed.data.amount,
+        category: parsed.data.category || "LAINNYA",
       })
       .eq("id", id);
 
@@ -151,5 +153,26 @@ export async function deleteOperationalCost(id: string): Promise<ActionState> {
       success: false,
       message: error instanceof Error ? error.message : "Terjadi kesalahan",
     };
+  }
+}
+
+// ============================================================
+// READ — Distinct Categories
+// ============================================================
+export async function getDistinctCategories(): Promise<string[]> {
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data, error } = await supabase
+      .from("operational_costs")
+      .select("category")
+      .not("category", "is", null)
+      .order("category");
+
+    if (error) return [];
+
+    const categories = [...new Set(data.map((row) => row.category))].filter(Boolean);
+    return categories;
+  } catch {
+    return [];
   }
 }

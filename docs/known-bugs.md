@@ -9,7 +9,7 @@
 
 | # | Bug | Penyebab | Solusi | File Terkait |
 |---|-----|----------|--------|-------------|
-| 1 | **`null value in column "category"`** saat insert `operational_costs` | Kolom `category` NOT NULL tanpa default, insert tidak mengisi `category` | Default `category: "LAINNYA"` di insert | `lib/operational-costs.ts` |
+| 1 | **`null value in column "category"`** saat insert `operational_costs` | Kolom `category` NOT NULL tanpa default, insert tidak mengisi `category` | ✅ **RESOLVED** — User sekarang bisa memilih kategori via input/chip-button di form, fallback tetap `"LAINNYA"` | `lib/operational-costs.ts`, `lib/validation.ts`, `components/operational-costs/operational-cost-list-client.tsx` |
 | 2 | **`tambah karyawan error`** — UPDATE ke `public.users` gagal | Awalnya pakai UPDATE, padahal user baru belum ada di tabel → harus INSERT | Ganti `UPDATE` → `INSERT` ke `public.users` | `lib/users.ts` |
 | 3 | **Dashboard 404** setelah deploy | `.env.local` tidak di-restart setelah tambah `SUPABASE_SERVICE_ROLE_KEY` | Restart server setelah ubah `.env` | — |
 | 4 | **RLS policy blokir query `users`** | Query `users` pakai anon key, tapi RLS menghalangi akses langsung | Semua query `users` WAJIB pakai `createAdminClient()` (service_role) | `lib/users.ts` |

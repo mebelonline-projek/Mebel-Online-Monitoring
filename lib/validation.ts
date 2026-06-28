@@ -87,10 +87,11 @@ export const paymentSchema = z.object({
 
 export type PaymentFormValues = z.infer<typeof paymentSchema>;
 
-// --- Operational Cost (simpel: nama + jumlah doang) ---
+// --- Operational Cost (nama + jumlah + kategori bebas) ---
 export const operationalCostSchema = z.object({
   name: z.string().min(2, "Nama biaya minimal 2 karakter").max(200, "Nama biaya maksimal 200 karakter"),
   amount: z.coerce.number().min(1, "Jumlah harus lebih dari 0").max(999_999_999, "Jumlah terlalu besar"),
+  category: z.string().max(100, "Kategori maksimal 100 karakter").optional().default("LAINNYA"),
 });
 
 export type OperationalCostFormValues = z.infer<typeof operationalCostSchema>;

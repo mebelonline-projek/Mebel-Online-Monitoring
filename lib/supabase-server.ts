@@ -10,8 +10,14 @@ import { cookies } from "next/headers";
 const getCachedSupabaseClient = cache(async () => {
   const cookieStore = await cookies();
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error(
+      "[Supabase] NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY wajib diset di environment variables. Cek Vercel Dashboard → Settings → Environment Variables."
+    );
+  }
 
   return createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {

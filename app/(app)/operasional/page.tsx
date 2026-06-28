@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, getUserProfile } from "@/lib/supabase-server";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { getDistinctCategories } from "@/lib/operational-costs";
 import { OperationalCostListClient } from "@/components/operational-costs/operational-cost-list-client";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,7 @@ export default async function OperasionalPage({
         totalPages={totalPages}
         bulan={bulan}
         profileRole={profile.role}
+        distinctCategories={await getDistinctCategories()}
       />
     </div>
   );
