@@ -1,0 +1,76 @@
+"use server";
+
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+
+export async function runMigration() {
+  try {
+    const supabase = await createServerSupabaseClient();
+    
+    // Coba SELECT dulu untuk cek apakah kolom customer_name sudah ada
+    const { data: test, error: testError } = await supabase
+      .from("transactions")
+      .select("customer_name")
+      .limit(1);
+
+    if (testError && testError.message?.includes("column") && testError.message?.includes("customer_name")) {
+      // Kolom belum ada, jalankan migrasi
+      // Karena kita tidak punya akses SQL langsung, kita perlu approach berbeda
+      // Gunakan supabase REST API dengan service role key
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      
+      if (!supabaseUrl || !serviceKey) {
+        return { success: false, message: "Missing credentials untuk migrasi" };
+      }
+
+      const sql = `-- SQL Migration
+-- 1. Lepas FK
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_customer_id_fkey;
+ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_product_id_fkey;
+ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_customer_id_fkey;
+
+-- 2. Ubah transactions
+ALTER TABLE transactions ALTER COLUMN customer_id DROP NOT NULL;
+ALTER TABLE transactions ALTER COLUMN customer_id TYPE TEXT;
+ALTER TABLE transactions RENAME COLUMN customer_id TO customer_name;
+ALTER TABLE transactions DROP COLUMN IF EXISTS product_id;
+ALTER TABLE transactions DROP COLUMN IF EXISTS custom_product_name;
+
+-- 3. Ubah invoices  
+ALTER TABLE invoices ALTER COLUMN customer_id DROP NOT NULL;
+ALTER TABLE invoices ALTER COLUMN customer_id TYPE TEXT;
+ALTER TABLE invoices RENAME COLUMN customer_id TO customer_name;
+
+-- 4. Hapus tabel lama
+DROP TABLE IF EXISTS customers CASCADE;
+DROP TABLE IF EXISTS products CASCADE;`;
+
+      // Kirim SQL via Management API
+      const response = await fetch(`${supabaseUrl}/rest/v1/`, {
+        method: "POST",
+        headers: {
+          "apikey": serviceKey,
+          "Authorization": `Bearer ${serviceKey}`,
+          "Content-Type": "application/json",
+          "Prefer": "params=single-object"
+        },
+        body: JSON.stringify({
+          query: sql
+        })
+      });
+
+      return { 
+        success: response.ok, 
+        status: response.status,
+        message: response.ok ? "Migrasi berhasil" : `Migrasi gagal: ${response.statusText}`
+      };
+    }
+
+    return { success: true, message: "✅ Database sudah pakai skema baru", data: test };
+  } catch (error) {
+    return { 
+      success: false, 
+      message: error instanceof Error ? error.message : "Error unknown" 
+    };
+  }
+}

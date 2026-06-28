@@ -1,0 +1,388 @@
+// ============================================================
+// 🧾 INVOICE DOCUMENT — Template PDF Invoice
+// ============================================================
+// Digunakan oleh @react-pdf/renderer untuk generate PDF.
+// ============================================================
+
+import React from "react";
+import { Document, Page, Text, View, StyleSheet, Font, Image } from "@react-pdf/renderer";
+
+// ============================================================
+// Font Registration
+// ============================================================
+Font.register({
+  family: "Helvetica",
+  fonts: [
+    { src: "Helvetica", fontWeight: "normal" },
+    { src: "Helvetica-Bold", fontWeight: "bold" },
+  ],
+});
+
+// ============================================================
+// Types
+// ============================================================
+export interface InvoiceData {
+  invoiceNumber: string;
+  createdAt: string;
+  status: string;
+
+  // Toko
+  storeName: string;
+  storeAddress: string | null;
+  storePhone: string | null;
+  storeLogoUrl: string | null;
+
+  // Customer
+  customerName: string;
+  customerPhone: string | null;
+  customerAddress: string | null;
+
+  // Produk
+  productName: string;
+  productDescription: string | null;
+  description: string | null;
+
+  // Keuangan
+  finalPrice: number;
+  paymentType: string;
+  dpAmount: number;
+  totalPaid: number;
+  remainingAmount: number;
+
+  // Riwayat pembayaran
+  payments: Array<{
+    amount: number;
+    date: string;
+    method: string;
+    note: string | null;
+  }>;
+}
+
+// ============================================================
+// Styles
+// ============================================================
+const styles = StyleSheet.create({
+  page: {
+    padding: 40,
+    paddingTop: 30,
+    fontSize: 10,
+    fontFamily: "Helvetica",
+    color: "#1a1a1a",
+  },
+  // Header
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 30,
+    paddingBottom: 20,
+    borderBottomWidth: 2,
+    borderBottomColor: "#800000",
+    borderBottomStyle: "solid",
+  },
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 15,
+    flex: 1,
+  },
+  logo: {
+    width: 60,
+    height: 60,
+    objectFit: "contain",
+  },
+  storeInfo: {
+    flexDirection: "column",
+  },
+  storeName: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#800000",
+    marginBottom: 2,
+  },
+  storeDetail: {
+    fontSize: 8,
+    color: "#666",
+    marginBottom: 1,
+  },
+  headerRight: {
+    alignItems: "flex-end",
+  },
+  invoiceTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#800000",
+    marginBottom: 4,
+  },
+  invoiceNumber: {
+    fontSize: 14,
+    fontWeight: "bold",
+    marginBottom: 2,
+  },
+  invoiceDate: {
+    fontSize: 8,
+    color: "#666",
+  },
+  // Info Customer
+  section: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: "bold",
+    color: "#800000",
+    marginBottom: 8,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+    borderBottomStyle: "solid",
+  },
+  infoRow: {
+    flexDirection: "row",
+    marginBottom: 3,
+  },
+  infoLabel: {
+    width: 80,
+    fontSize: 9,
+    color: "#666",
+  },
+  infoValue: {
+    flex: 1,
+    fontSize: 9,
+  },
+  // Table
+  table: {
+    marginBottom: 20,
+  },
+  tableHeader: {
+    flexDirection: "row",
+    backgroundColor: "#800000",
+    color: "#ffffff",
+    padding: 8,
+    fontSize: 9,
+    fontWeight: "bold",
+  },
+  tableHeaderItem: { flex: 3 },
+  tableHeaderQty: { flex: 1, textAlign: "center" },
+  tableHeaderPrice: { flex: 2, textAlign: "right" },
+  tableHeaderTotal: { flex: 2, textAlign: "right" },
+  tableRow: {
+    flexDirection: "row",
+    padding: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+    borderBottomStyle: "solid",
+    fontSize: 9,
+  },
+  tableCell: { flex: 3 },
+  tableCellQty: { flex: 1, textAlign: "center" },
+  tableCellPrice: { flex: 2, textAlign: "right" },
+  tableCellTotal: { flex: 2, textAlign: "right" },
+  // Summary
+  summary: {
+    marginLeft: "auto",
+    width: "50%",
+    marginBottom: 20,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    fontSize: 9,
+  },
+  summaryRowBold: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    fontSize: 11,
+    fontWeight: "bold",
+    backgroundColor: "#f5f5f5",
+    borderTopWidth: 1,
+    borderTopColor: "#800000",
+    borderTopStyle: "solid",
+  },
+  summaryLabel: { color: "#666" },
+  summaryValue: { fontWeight: "bold" },
+  summaryValueGreen: { fontWeight: "bold", color: "#16a34a" },
+  summaryValueRed: { fontWeight: "bold", color: "#dc2626" },
+  // Payment History
+  paymentItem: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    fontSize: 9,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+    borderBottomStyle: "solid",
+  },
+  paymentDate: { color: "#666", fontSize: 8 },
+  paymentMethod: { color: "#666", fontSize: 8 },
+  paymentAmount: { fontWeight: "bold" },
+  // Footer
+  footer: {
+    marginTop: 40,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    borderTopStyle: "solid",
+    textAlign: "center",
+    fontSize: 8,
+    color: "#999",
+  },
+});
+
+// ============================================================
+// Helper: format currency di PDF
+// ============================================================
+const fmt = (amount: number) => {
+  return `Rp ${amount.toLocaleString("id-ID")}`;
+};
+
+// ============================================================
+// Main Component
+// ============================================================
+export function InvoiceDocument({ data }: { data: InvoiceData }) {
+  return (
+    <Document>
+      <Page size="A4" style={styles.page}>
+        {/* ==================== HEADER ==================== */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            {data.storeLogoUrl && (
+              <Image style={styles.logo} src={data.storeLogoUrl} />
+            )}
+            <View style={styles.storeInfo}>
+              <Text style={styles.storeName}>{data.storeName}</Text>
+              {data.storeAddress && (
+                <Text style={styles.storeDetail}>{data.storeAddress}</Text>
+              )}
+              {data.storePhone && (
+                <Text style={styles.storeDetail}>Telp: {data.storePhone}</Text>
+              )}
+            </View>
+          </View>
+          <View style={styles.headerRight}>
+            <Text style={styles.invoiceTitle}>INVOICE</Text>
+            <Text style={styles.invoiceNumber}>{data.invoiceNumber}</Text>
+            <Text style={styles.invoiceDate}>{data.createdAt}</Text>
+          </View>
+        </View>
+
+        {/* ==================== INFO CUSTOMER ==================== */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Data Pelanggan</Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Nama</Text>
+            <Text style={styles.infoValue}>{data.customerName}</Text>
+          </View>
+          {data.customerPhone && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Telepon</Text>
+              <Text style={styles.infoValue}>{data.customerPhone}</Text>
+            </View>
+          )}
+          {data.customerAddress && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Alamat</Text>
+              <Text style={styles.infoValue}>{data.customerAddress}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* ==================== INFO PRODUK ==================== */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Detail Pesanan</Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Produk</Text>
+            <Text style={styles.infoValue}>{data.productName}</Text>
+          </View>
+          {data.productDescription && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Keterangan</Text>
+              <Text style={styles.infoValue}>{data.productDescription}</Text>
+            </View>
+          )}
+          {data.description && (
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Catatan</Text>
+              <Text style={styles.infoValue}>{data.description}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* ==================== RINCIAN PEMBAYARAN ==================== */}
+        <View style={styles.table}>
+          <View style={styles.tableHeader}>
+            <Text style={styles.tableHeaderItem}>Keterangan</Text>
+            <Text style={styles.tableHeaderQty}>Qty</Text>
+            <Text style={styles.tableHeaderPrice}>Harga</Text>
+            <Text style={styles.tableHeaderTotal}>Subtotal</Text>
+          </View>
+          <View style={styles.tableRow}>
+            <Text style={styles.tableCell}>{data.productName}</Text>
+            <Text style={styles.tableCellQty}>1</Text>
+            <Text style={styles.tableCellPrice}>{fmt(data.finalPrice)}</Text>
+            <Text style={styles.tableCellTotal}>{fmt(data.finalPrice)}</Text>
+          </View>
+        </View>
+
+        {/* ==================== RINGKASAN ==================== */}
+        <View style={styles.summary}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Total Pesanan</Text>
+            <Text style={styles.summaryValue}>{fmt(data.finalPrice)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Total Dibayar</Text>
+            <Text style={styles.summaryValueGreen}>{fmt(data.totalPaid)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Metode</Text>
+            <Text style={styles.summaryValue}>
+              {data.paymentType === "CASH" ? "Cash" : "DP (Uang Muka)"}
+            </Text>
+          </View>
+          <View style={styles.summaryRowBold}>
+            <Text style={styles.summaryLabel}>Sisa Tagihan</Text>
+            <Text
+              style={
+                data.remainingAmount <= 0
+                  ? styles.summaryValueGreen
+                  : styles.summaryValueRed
+              }
+            >
+              {data.remainingAmount <= 0
+                ? "✓ LUNAS"
+                : fmt(data.remainingAmount)}
+            </Text>
+          </View>
+        </View>
+
+        {/* ==================== RIWAYAT PEMBAYARAN ==================== */}
+        {data.payments.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Riwayat Pembayaran</Text>
+            {data.payments.map((payment, index) => (
+              <View key={index} style={styles.paymentItem}>
+                <Text style={styles.paymentDate}>{payment.date}</Text>
+                <Text style={styles.paymentMethod}>{payment.method}</Text>
+                <Text style={styles.paymentAmount}>{fmt(payment.amount)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* ==================== FOOTER ==================== */}
+        <View style={styles.footer}>
+          <Text>Terima kasih atas kepercayaan Anda</Text>
+          <Text style={{ marginTop: 2 }}>
+            {data.storeName} — {data.storeAddress}
+          </Text>
+        </View>
+      </Page>
+    </Document>
+  );
+}

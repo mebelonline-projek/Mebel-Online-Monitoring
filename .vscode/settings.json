@@ -1,0 +1,34 @@
+{
+  // ============================================================
+  // ⚙️ VS CODE SETTINGS — Optimasi RAM & File Watcher
+  // ============================================================
+
+  // Exclude folder dari file watcher — cegah restart loop
+  "files.watcherExclude": {
+    "**/kode/**": true,
+    "**/node_modules/**": true,
+    "**/.next/**": true,
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true
+  },
+
+  // Exclude dari pencarian (search)
+  "search.exclude": {
+    "**/kode": true,
+    "**/node_modules": true,
+    "**/.next": true
+  },
+
+  // Batasi maksimum RAM untuk TypeScript Server
+  "typescript.tsserver.maxTsServerMemory": 4096,
+
+  // Matikan logging TS Server yang tidak perlu
+  "typescript.tsserver.log": "off",
+
+  // Auto-save hanya saat pindah fokus (bukan setiap ketik)
+  // Ini mengurangi trigger HMR yang tidak perlu
+  "files.autoSave": "onFocusChange",
+
+  // Matikan trace extension
+  "extensions.ignoreRecommendations": true
+}

@@ -1,0 +1,399 @@
+﻿@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-geist-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Custom tokens untuk Furniture / Dark Dashboard */
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-highest: var(--surface-container-highest);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  --color-surface-dim: var(--surface-dim);
+  --color-surface-bright: var(--surface-bright);
+  --color-on-surface-variant: var(--on-surface-variant);
+  --color-outline-variant: var(--outline-variant);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-secondary-container: var(--secondary-container);
+  --color-on-secondary-container: var(--on-secondary-container);
+  --color-tertiary: var(--tertiary);
+  --color-on-tertiary: var(--on-tertiary);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-tertiary-container: var(--on-tertiary-container);
+  --color-on-error-container: var(--on-error-container);
+  --color-error-container: var(--error-container);
+  --color-surface-variant: var(--surface-variant);
+  --color-on-surface: var(--on-surface);
+  --color-on-background: var(--on-background);
+  --color-surface-tint: var(--surface-tint);
+  --color-inverse-surface: var(--inverse-surface);
+  --color-inverse-on-surface: var(--inverse-on-surface);
+  --color-inverse-primary: var(--inverse-primary);
+  --color-primary-fixed: var(--primary-fixed);
+  --color-primary-fixed-dim: var(--primary-fixed-dim);
+  --color-on-primary-fixed: var(--on-primary-fixed);
+  --color-on-primary-fixed-variant: var(--on-primary-fixed-variant);
+  --color-secondary-fixed: var(--secondary-fixed);
+  --color-secondary-fixed-dim: var(--secondary-fixed-dim);
+  --color-on-secondary-fixed: var(--on-secondary-fixed);
+  --color-on-secondary-fixed-variant: var(--on-secondary-fixed-variant);
+  --color-tertiary-fixed: var(--tertiary-fixed);
+  --color-tertiary-fixed-dim: var(--tertiary-fixed-dim);
+  --color-on-tertiary-fixed: var(--on-tertiary-fixed);
+  --color-on-tertiary-fixed-variant: var(--on-tertiary-fixed-variant);
+}
+
+/* ============================================================
+   LIGHT MODE - Home Decoration & Interior (Furniture vibe)
+   Source: UI UX Pro Max colors.csv
+   ============================================================ */
+:root {
+  --background: #FAF5F2;
+  --foreground: #0F172A;
+  --card: #FFFFFF;
+  --card-foreground: #0F172A;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F172A;
+  --primary: #78716C;
+  --primary-foreground: #FFFFFF;
+  --secondary: #A8A29E;
+  --secondary-foreground: #FFFFFF;
+  --muted: #F6F6F6;
+  --muted-foreground: #64748B;
+  --accent: #D97706;
+  --accent-foreground: #FFFFFF;
+  --destructive: #DC2626;
+  --border: #EEEDED;
+  --input: #EEEDED;
+  --ring: #78716C;
+  --chart-1: #78716C;
+  --chart-2: #A8A29E;
+  --chart-3: #D97706;
+  --chart-4: #059669;
+  --chart-5: #DC2626;
+  --radius: 0.625rem;
+  --sidebar: #F5EFEA;
+  --sidebar-foreground: #0F172A;
+  --sidebar-primary: #78716C;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #EFE9E4;
+  --sidebar-accent-foreground: #0F172A;
+  --sidebar-border: #EEEDED;
+  --sidebar-ring: #78716C;
+
+  /* Extended tokens - Light */
+  --surface-container-low: #F5EFEA;
+  --surface-container: #EFE9E4;
+  --surface-container-high: #E9E3DE;
+  --surface-container-highest: #E3DDD8;
+  --surface-container-lowest: #FFFFFF;
+  --surface-dim: #DCD6D1;
+  --surface-bright: #FAF5F2;
+  --on-surface-variant: #64748B;
+  --outline-variant: #EEEDED;
+  --primary-container: #EDE7E2;
+  --on-primary-container: #2D2522;
+  --secondary-container: #E8E4E0;
+  --on-secondary-container: #3B3835;
+  --tertiary: #D97706;
+  --on-tertiary: #FFFFFF;
+  --tertiary-container: #FEF3C7;
+  --on-tertiary-container: #78350F;
+  --on-error-container: #7F1D1D;
+  --error-container: #FEE2E2;
+  --surface-variant: #E9E3DE;
+  --on-surface: #0F172A;
+  --on-background: #0F172A;
+  --surface-tint: #78716C;
+  --inverse-surface: #1C1917;
+  --inverse-on-surface: #F5F0EB;
+  --inverse-primary: #D6D3D1;
+  --primary-fixed: #EDE7E2;
+  --primary-fixed-dim: #D6D3D1;
+  --on-primary-fixed: #2D2522;
+  --on-primary-fixed-variant: #57534E;
+  --secondary-fixed: #E8E4E0;
+  --secondary-fixed-dim: #CCC8C4;
+  --on-secondary-fixed: #1C1B1F;
+  --on-secondary-fixed-variant: #44403C;
+  --tertiary-fixed: #FEF3C7;
+  --tertiary-fixed-dim: #FDE68A;
+  --on-tertiary-fixed: #78350F;
+  --on-tertiary-fixed-variant: #92400E;
+}
+
+/* ============================================================
+   DARK MODE — Cinema Dark Luxury
+   Inspired: Modern Dark Cinema + Glassmorphism
+   Gradient bg, indigo accent, frosted glass, glow
+   ============================================================ */
+.dark {
+  --background: #030409;
+  --foreground: #EDEDEF;
+  --card: rgba(13, 14, 26, 0.6);
+  --card-foreground: #EDEDEF;
+  --popover: rgba(15, 16, 30, 0.8);
+  --popover-foreground: #EDEDEF;
+  --primary: #5E6AD2;
+  --primary-foreground: #FFFFFF;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #EDEDEF;
+  --muted: rgba(255, 255, 255, 0.04);
+  --muted-foreground: #8A8F98;
+  --accent: #818CF8;
+  --accent-foreground: #FFFFFF;
+  --destructive: #EF4444;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #5E6AD2;
+  --chart-1: #5E6AD2;
+  --chart-2: #818CF8;
+  --chart-3: #A78BFA;
+  --chart-4: #34D399;
+  --chart-5: #EF4444;
+  --radius: 1rem;
+  --sidebar: #0A0B16;
+  --sidebar-foreground: #EDEDEF;
+  --sidebar-primary: #5E6AD2;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: rgba(94, 106, 210, 0.12);
+  --sidebar-accent-foreground: #EDEDEF;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-ring: #5E6AD2;
+
+  /* Extended tokens — Dark */
+  --surface-container-low: rgba(255, 255, 255, 0.03);
+  --surface-container: rgba(255, 255, 255, 0.05);
+  --surface-container-high: rgba(255, 255, 255, 0.07);
+  --surface-container-highest: rgba(255, 255, 255, 0.09);
+  --surface-container-lowest: rgba(255, 255, 255, 0.02);
+  --surface-dim: #020203;
+  --surface-bright: #1A1B30;
+  --on-surface-variant: #8A8F98;
+  --outline-variant: rgba(255, 255, 255, 0.08);
+  --primary-container: rgba(94, 106, 210, 0.15);
+  --on-primary-container: #C7D2FE;
+  --secondary-container: rgba(255, 255, 255, 0.06);
+  --on-secondary-container: #EDEDEF;
+  --tertiary: #A78BFA;
+  --on-tertiary: #FFFFFF;
+  --tertiary-container: rgba(167, 139, 250, 0.15);
+  --on-tertiary-container: #DDD6FE;
+  --on-error-container: #FEE2E2;
+  --error-container: rgba(239, 68, 68, 0.15);
+  --surface-variant: rgba(255, 255, 255, 0.05);
+  --on-surface: #EDEDEF;
+  --on-background: #EDEDEF;
+  --surface-tint: #5E6AD2;
+  --inverse-surface: #EDEDEF;
+  --inverse-on-surface: #030409;
+  --inverse-primary: #5E6AD2;
+  --primary-fixed: #5E6AD2;
+  --primary-fixed-dim: #4338CA;
+  --on-primary-fixed: #FFFFFF;
+  --on-primary-fixed-variant: #C7D2FE;
+  --secondary-fixed: rgba(255, 255, 255, 0.08);
+  --secondary-fixed-dim: rgba(255, 255, 255, 0.05);
+  --on-secondary-fixed: #EDEDEF;
+  --on-secondary-fixed-variant: #8A8F98;
+  --tertiary-fixed: #A78BFA;
+  --tertiary-fixed-dim: #7C3AED;
+  --on-tertiary-fixed: #FFFFFF;
+  --on-tertiary-fixed-variant: #DDD6FE;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  /* Cinema gradient overlay on body in dark mode */
+  .dark body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% -20%, rgba(94, 106, 210, 0.08), transparent),
+      radial-gradient(ellipse 60% 50% at 100% 80%, rgba(167, 139, 250, 0.05), transparent),
+      linear-gradient(180deg, #0a0b1a 0%, #030409 100%);
+  }
+}
+
+/* ============================================================
+   UTILITY CLASSES - Dual theme support
+   ============================================================ */
+
+/* Glass panel — Cinema glassmorphism
+   Light: warm wood subtle shadow. Dark: frosted glass + indigo glow. */
+.glass-panel {
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.glass-panel:hover {
+  box-shadow: 0 4px 24px rgba(120, 113, 108, 0.12);
+}
+.dark .glass-panel {
+  background: rgba(13, 14, 26, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.dark .glass-panel:hover {
+  border-color: rgba(94, 106, 210, 0.3);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(94, 106, 210, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Glow title — Cinema indigo glow */
+.neon-title {
+  color: var(--primary);
+}
+.dark .neon-title {
+  text-shadow: 0 0 20px rgba(94, 106, 210, 0.3);
+  background: linear-gradient(135deg, #818CF8, #5E6AD2, #A78BFA);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Status badges - Light: soft colors. Dark: glowing dots. */
+.status-lunas {
+  background: rgba(0, 255, 204, 0.08);
+  color: #059669;
+  border-color: rgba(0, 255, 204, 0.2);
+}
+.dark .status-lunas {
+  background: rgba(202, 138, 4, 0.12);
+  color: #CA8A04;
+}
+.dark .status-lunas .dot {
+  background: #CA8A04;
+  box-shadow: 0 0 5px #CA8A04;
+}
+
+.status-dp {
+  background: rgba(217, 119, 6, 0.1);
+  color: #92400E;
+  border-color: rgba(217, 119, 6, 0.2);
+}
+.dark .status-dp {
+  background: rgba(245, 158, 11, 0.1);
+  color: #F59E0B;
+}
+.dark .status-dp .dot {
+  background: #F59E0B;
+  box-shadow: 0 0 5px #F59E0B;
+}
+
+.status-batal {
+  background: rgba(186, 26, 26, 0.08);
+  color: #ba1a1a;
+  border-color: rgba(186, 26, 26, 0.2);
+}
+.dark .status-batal {
+  background: rgba(239, 68, 68, 0.1);
+  color: #EF4444;
+}
+.dark .status-batal .dot {
+  background: #EF4444;
+  box-shadow: 0 0 5px #EF4444;
+}
+
+.status-menunggu {
+  background: rgba(120, 113, 108, 0.15);
+  color: #57534E;
+  border-color: rgba(120, 113, 108, 0.2);
+}
+.dark .status-menunggu {
+  background: rgba(245, 158, 11, 0.1);
+  color: #F59E0B;
+}
+
+/* Scrollbar custom */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+
+/* Selection */
+::selection {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* Table row hover */
+.data-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.data-table tbody tr:hover {
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+}

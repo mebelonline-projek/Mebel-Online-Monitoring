@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=zmjcdltplreqnsnbaldl&access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptamNkbHRwbHJlcW5zbmJhbGRsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjMxMDQ5NSwiZXhwIjoyMDk3ODg2NDk1fQ.Tks79C1myoYvfHNZp4_B4_TmYr4QtRFh_yCXsG-Tpts"
+    }
+  }
+}
