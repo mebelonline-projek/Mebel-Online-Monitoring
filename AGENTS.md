@@ -122,6 +122,30 @@ Sebelum menulis kode yang menggunakan **Next.js, React, Supabase, Tailwind, Zod,
 
 ---
 
+## 6. 🖥️ ATURAN CLI — Windows + PowerShell
+
+Proyek ini dijalankan di **Windows 11** dengan shell **PowerShell** (bukan bash/cmd).
+
+### Aturan Wajib
+- **JANGAN pakai `&&`** — PowerShell tidak support. Gunakan `;` atau pisah command.
+- **Git commands**: selalu pakai `git -C "path"` jangan `cd path && git ...`
+- **Jangan gabung add + commit + push** — pisah satu per satu. Commit gagal = state kacau.
+- **Jangan asumsikan shell bash** — tidak ada `rm -rf`, `&&`, `||`, dll.
+
+### Contoh Benar
+```powershell
+git -C "c:\Users\USER\projek real\Aplikasi monitoring" add -A
+git -C "c:\Users\USER\projek real\Aplikasi monitoring" commit -m "pesan"
+git -C "c:\Users\USER\projek real\Aplikasi monitoring" push origin main
+```
+
+### Contoh Salah
+```bash
+cd "path" && git add -A && git commit -m "pesan"  # ❌ && tidak jalan di PowerShell
+```
+
+---
+
 ## ⛔ DILARANG KERAS
 
 1. **Jangan rewrite komponen yang sudah jalan** — fokus selesaikan yang belum ada
