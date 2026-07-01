@@ -51,6 +51,49 @@
 
 ## 📝 Log Perubahan
 
+### [8.0.0] — 2026-07-01 — ⚡ Optimistic Update (Instant Navigation)
+
+#### 🆕 Fitur Baru: Optimistic Update — Navigasi Instan ke Halaman Detail
+Setelah user submit form transaksi, halaman detail langsung render tanpa menunggu fetch dari database. Data transaksi dikirim via `sessionStorage` (sekali pakai, aman, tidak mengotori URL).
+
+**Flow baru:**
+```
+Submit form → POST sukses → sessionStorage → router.push → Detail render INSTAN (~0ms)
+```
+
+**Sebelumnya:**
+```
+Submit form → POST sukses → router.push → Server fetch DB → render (~700ms)
+```
+
+#### 📄 File yang Diubah
+
+| File | Perubahan |
+|------|-----------|
+| `components/shared/status-badge.tsx` | Tambah variant `"MENYIMPAN"` dengan spinner animasi (border-spin) |
+| `components/transactions/transaction-form.tsx` | Setelah POST sukses → simpan data transaksi ke `sessionStorage("pending_trx")` + wrapped try/catch |
+| `components/transactions/transaction-detail-client.tsx` | `useState<TransactionDetail>` lazy initializer — baca sessionStorage saat mount, hapus setelah dibaca |
+
+#### 🛡️ Safety & Edge Cases
+- **sessionStorage tidak tersedia** (private browsing, iOS Safari) → try/catch diam-diam, fallback ke data server
+- **Data corrupt** → JSON.parse gagal → fallback ke data server
+- **ID tidak match** → skip, pakai data server
+- **Akses langsung via URL** → sessionStorage kosong → fallback normal
+- **Form edit** → tidak menyentuh sessionStorage sama sekali
+- **Transaksi gagal** → sessionStorage tidak ditulis, toast error muncul
+
+#### 📊 Verifikasi
+- ✅ `npm run type-check` — 0 error
+- ✅ `npm run lint` — 0 error baru (1 warning pre-existing)
+- ✅ `npm run build` — Compiled successfully, 30 routes
+
+#### 📝 Catatan Arsitektur
+- **Layer 2 (Optimistic List) ditunda** — Form dan list ada di halaman terpisah (`/transaksi/tambah` vs `/transaksi`). Saat form di-submit, list component sudah unmount. `useOptimistic` tidak bisa bekerja lintas halaman tanpa state management global.
+- **Tidak ada library baru** — Menggunakan React 19 built-in (`useState` lazy init) + browser API (`sessionStorage`)
+- **Tidak ada perubahan di server/DB** — Semua perubahan di client-side saja
+
+---
+
 ### [5.1.0] — 2026-06-27 — Dokumentasi Schema + Bug Prevention
 
 #### 📄 Dokumentasi Baru

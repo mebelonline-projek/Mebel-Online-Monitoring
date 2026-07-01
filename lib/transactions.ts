@@ -34,6 +34,8 @@ function createAdminClient() {
 const CACHE_TAGS = {
   dashboard: "dashboard",
   transactions: "transactions",
+  invoices: "invoices",
+  operational: "operational",
 } as const;
 
 // ============================================================
@@ -1004,6 +1006,7 @@ export async function createInvoice(data: {
     }
 
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidateTag(CACHE_TAGS.invoices, { expire: 0 });
 
     return {
       success: true,
@@ -1146,6 +1149,7 @@ export async function deleteInvoice(id: string): Promise<ActionState> {
     if (error) return { success: false, message: error.message };
 
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidateTag(CACHE_TAGS.invoices, { expire: 0 });
 
     return {
       success: true,
@@ -1515,4 +1519,111 @@ export const getDashboardStats = unstable_cache(
   computeDashboardStats,
   ["dashboard-stats"],
   { revalidate: 300, tags: [CACHE_TAGS.dashboard] }
+);
+
+// ============================================================
+// ⚡ TRANSAKSI PAGE DATA — Cached: data + status counts dalam 1 fungsi
+// ============================================================
+export interface TransactionsPageData {
+  transactions: TransactionWithRelations[];
+  total: number;
+  totalPages: number;
+  lunasCount: number;
+  dpCount: number;
+  menungguCount: number;
+  batalCount: number;
+}
+
+export const getTransactionsPageData = unstable_cache(
+  async (params: TransactionListParams = {}): Promise<TransactionsPageData> => {
+    const supabase = await createServerSupabaseClient();
+    const { q = "", status = "", page = 1, limit = 10 } = params;
+    const offset = (page - 1) * limit;
+
+    // Query data + count
+    let txQuery = supabase
+      .from("transactions")
+      .select(`
+        id, transaction_number, customer_name, description,
+        final_price, payment_type, dp_amount, status,
+        created_at, updated_at, void_reason
+      `, { count: "exact" });
+
+    if (status && status !== "semua") {
+      txQuery = txQuery.eq("status", status);
+    }
+    if (q) {
+      txQuery = txQuery.or(`transaction_number.ilike.%${q}%,customer_name.ilike.%${q}%`);
+    }
+
+    // ⚡ 2 query paralel: data + semua status (bukan 5 query)
+    const [{ data: transactions, count: total }, { data: allStatuses }] = await Promise.all([
+      txQuery.order("created_at", { ascending: false }).range(offset, offset + limit - 1),
+      supabase.from("transactions").select("status"),
+    ]);
+
+    // Hitung count per status di JS
+    const statusCounts = (allStatuses || []).reduce(
+      (acc, t) => { acc[t.status] = (acc[t.status] || 0) + 1; return acc; },
+      {} as Record<string, number>
+    );
+
+    return {
+      transactions: (transactions || []) as unknown as TransactionWithRelations[],
+      total: total || 0,
+      totalPages: Math.ceil((total || 0) / limit),
+      lunasCount: statusCounts["LUNAS"] || 0,
+      dpCount: statusCounts["DP"] || 0,
+      menungguCount: statusCounts["MENUNGGU_PELUNASAN"] || 0,
+      batalCount: statusCounts["BATAL"] || 0,
+    };
+  },
+  ["transactions-page-data"],
+  { revalidate: 30, tags: [CACHE_TAGS.transactions] }
+);
+
+// ============================================================
+// ⚡ INVOICE LIST — Cached: 30 detik, invalidasi via revalidateTag("invoices")
+// ============================================================
+export const getInvoicesCached = unstable_cache(
+  async (params: { q?: string; status?: string; page?: number; limit?: number } = {}) => {
+    const supabase = await createServerSupabaseClient();
+    const { q = "", status = "", page = 1, limit = 10 } = params;
+    const offset = (page - 1) * limit;
+
+    let query = supabase
+      .from("invoices")
+      .select(`
+        id, invoice_number, customer_name, status,
+        total_amount, total_paid, remaining_amount,
+        notes, created_by, created_at, updated_at
+      `, { count: "exact" });
+
+    if (status && status !== "semua") {
+      query = query.eq("status", status);
+    }
+    if (q) {
+      query = query.or(`invoice_number.ilike.%${q}%,customer_name.ilike.%${q}%`);
+    }
+
+    const { data, count, error } = await query
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      return { success: false, message: error.message, data: [], total: 0, totalPages: 0 };
+    }
+
+    const totalPages = Math.ceil((count || 0) / limit);
+
+    return {
+      success: true,
+      data: (data || []) as unknown as InvoiceRow[],
+      total: count || 0,
+      totalPages,
+      currentPage: page,
+    };
+  },
+  ["invoices-list"],
+  { revalidate: 30, tags: [CACHE_TAGS.invoices] }
 );

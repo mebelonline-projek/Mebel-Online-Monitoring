@@ -13,7 +13,16 @@ import { formatCurrency, formatDate } from "@/lib/formatters";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Trash2, Download, FileText, Printer } from "lucide-react";
+import { ArrowLeft, Trash2, Download, Printer } from "lucide-react";
 
 interface InvoiceDetail {
   id: string;
@@ -106,8 +115,8 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
             <h1 className="text-2xl md:text-3xl font-bold font-mono">
               {invoice.invoice_number}
             </h1>
-            <span
-              className={`text-xs px-2 py-1 rounded-full font-semibold ${
+            <Badge
+              className={
                 invoice.status === "PAID"
                   ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                   : invoice.status === "DRAFT"
@@ -115,41 +124,43 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
                     : invoice.status === "SENT"
                       ? "bg-primary/10 text-primary"
                       : "bg-destructive/10 text-destructive"
-              }`}
+              }
             >
               {invoice.status}
-            </span>
+            </Badge>
           </div>
           <p className="text-muted-foreground text-sm">Preview Invoice</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => router.push("/invoice")} className="gap-2">
             <ArrowLeft className="w-4 h-4" />
-            Kembali
+            <span className="hidden sm:inline">Kembali</span>
           </Button>
           {isOwner && (
             <Button
               variant="outline"
+              size="icon"
               className="text-destructive border-destructive/30 hover:bg-destructive/10"
               onClick={() => setShowDelete(true)}
+              aria-label="Hapus invoice"
             >
               <Trash2 className="w-4 h-4" />
             </Button>
           )}
           <Button onClick={handleDownloadPDF} className="gap-2">
             <Download className="w-4 h-4" />
-            Unduh PDF
+            <span className="hidden sm:inline">Unduh PDF</span>
           </Button>
           <Button variant="outline" onClick={handlePrint} className="gap-2">
             <Printer className="w-4 h-4" />
-            Cetak Invoice
+            <span className="hidden sm:inline">Cetak</span>
           </Button>
         </div>
       </div>
 
       {/* INVOICE PREVIEW CARD — kept as physical invoice style */}
       <Card className="overflow-hidden shadow-sm">
-        <div className="bg-white text-black p-8 md:p-12 lg:p-16 dark:bg-white dark:text-black" id="invoice-print-area">
+        <div className="bg-white text-black p-4 md:p-8 lg:p-12 dark:bg-white dark:text-black" id="invoice-print-area">
           {/* HEADER */}
           <div className="flex flex-row justify-between items-start mb-8 pb-6 border-b-2 border-[#800000]">
             <div className="flex items-center gap-4">
@@ -201,30 +212,32 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
             <h4 className="text-sm font-bold text-[#800000] mb-2 pb-1 border-b border-gray-200">
               Detail Pesanan
             </h4>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#800000] text-white">
-                  <th className="text-left p-2 font-medium">No. Transaksi</th>
-                  <th className="text-center p-2 font-medium">Tipe</th>
-                  <th className="text-right p-2 font-medium">Harga</th>
-                  <th className="text-right p-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allTransactions.map((tx: any) => (
-                  <tr key={tx.id} className="border-b border-gray-200">
-                    <td className="p-2 font-mono text-xs">{tx.transaction_number}</td>
-                    <td className="text-center p-2 text-xs">
-                      {tx.payment_type === "CASH" ? "Cash" : "DP"}
-                    </td>
-                    <td className="text-right p-2">{formatCurrency(tx.final_price)}</td>
-                    <td className="text-right p-2">
-                      <StatusBadge status={tx.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-[#800000] hover:bg-[#800000] [&>th]:text-white [&>th]:border-white/20">
+                    <TableHead className="text-left font-medium">No. Transaksi</TableHead>
+                    <TableHead className="text-center font-medium">Tipe</TableHead>
+                    <TableHead className="text-right font-medium">Harga</TableHead>
+                    <TableHead className="text-right font-medium">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allTransactions.map((tx: any) => (
+                    <TableRow key={tx.id} className="border-b border-gray-200 hover:bg-gray-50">
+                      <TableCell className="font-mono text-xs">{tx.transaction_number}</TableCell>
+                      <TableCell className="text-center text-xs">
+                        {tx.payment_type === "CASH" ? "Cash" : "DP"}
+                      </TableCell>
+                      <TableCell className="text-right">{formatCurrency(tx.final_price)}</TableCell>
+                      <TableCell className="text-right">
+                        <StatusBadge status={tx.status} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           {/* SUMMARY */}

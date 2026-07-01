@@ -33,6 +33,10 @@ const statusConfig: Record<string, { className: string; label: string }> = {
     className: "status-menunggu",
     label: "Menunggu",
   },
+  MENYIMPAN: {
+    className: "status-menunggu",
+    label: "Menyimpan...",
+  },
 };
 
 export function StatusBadge({ status, className = "" }: StatusBadgeProps) {
@@ -41,11 +45,17 @@ export function StatusBadge({ status, className = "" }: StatusBadgeProps) {
     label: status,
   };
 
+  const isSaving = status === "MENYIMPAN";
+
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${config.className} ${className}`}
     >
-      <span className="w-1.5 h-1.5 rounded-full inline-block dot" />
+      {isSaving ? (
+        <span className="w-1.5 h-1.5 rounded-full inline-block border border-current border-t-transparent animate-spin" />
+      ) : (
+        <span className="w-1.5 h-1.5 rounded-full inline-block dot" />
+      )}
       {config.label}
     </span>
   );

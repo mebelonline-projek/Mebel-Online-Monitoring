@@ -79,7 +79,7 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
           const Icon = item.icon;
 
           return (
-            <Link key={item.href} href={item.href}>
+            <Link key={item.href} href={item.href} prefetch={true}>
               <div
                 className={`flex items-center gap-3 px-6 py-3 transition-all duration-300 group ${
                   isActive

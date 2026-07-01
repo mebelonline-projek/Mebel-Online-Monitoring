@@ -4,12 +4,19 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
 
   // 🚀 Optimasi bundle: exclude library besar dari client bundle
+  // ⚡ Router Cache: halaman dynamic di-cache 30 detik di client
+  //    → navigasi bolak-balik antar menu INSTANT dari cache
+  //    → setelah 30 detik, background revalidate otomatis
   experimental: {
     optimizePackageImports: [
       "lucide-react",
       "recharts",
       "framer-motion",
     ],
+    staleTimes: {
+      dynamic: 30,
+      static: 300,
+    },
   },
 
   // Konfigurasi header keamanan

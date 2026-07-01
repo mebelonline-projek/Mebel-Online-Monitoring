@@ -48,6 +48,7 @@ export function MobileBottomNav({ role }: { role: string }) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={true}
               className={cn(
                 "relative flex flex-col items-center justify-center flex-1 min-w-0 h-full rounded-xl transition-all duration-200",
                 navItems.length <= 5 ? "max-w-[20%]" : ""

@@ -81,6 +81,30 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
   const router = useRouter();
   const isOwner = profileRole === "OWNER";
 
+  // ⚡ Optimistic: baca sessionStorage saat mount — render instan tanpa fetch ulang
+  // Lazy initializer: hanya jalan sekali saat component pertama kali di-render
+  const [displayTransaction] = useState<TransactionDetail>(() => {
+    try {
+      const pending = sessionStorage.getItem("pending_trx");
+      if (pending) {
+        const parsed = JSON.parse(pending);
+        if (parsed.id === transaction.id) {
+          // Hapus segera setelah dibaca — sekali pakai
+          sessionStorage.removeItem("pending_trx");
+          return {
+            ...transaction,
+            ...parsed,
+            hpp_items: transaction.hpp_items,
+            transaction_payments: transaction.transaction_payments,
+          };
+        }
+      }
+    } catch {
+      // sessionStorage tidak tersedia atau data corrupt — pakai data server
+    }
+    return transaction;
+  });
+
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [isVoiding, setIsVoiding] = useState(false);
@@ -88,14 +112,14 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const canEdit = transaction.status === "DP";
-  const canVoid = isOwner && transaction.status !== "BATAL";
+  const canEdit = displayTransaction.status === "DP";
+  const canVoid = isOwner && displayTransaction.status !== "BATAL";
   const canDelete = isOwner;
-  const canAddPayment = transaction.status === "MENUNGGU_PELUNASAN" || transaction.status === "DP";
-  const totalPaid = transaction.transaction_payments.reduce((sum, p) => sum + p.amount, 0);
-  const remainingAmount = transaction.final_price - totalPaid;
-  const totalHpp = transaction.hpp_items.reduce((sum, item) => sum + item.amount, 0);
-  const estimatedProfit = transaction.final_price - totalHpp;
+  const canAddPayment = displayTransaction.status === "MENUNGGU_PELUNASAN" || displayTransaction.status === "DP";
+  const totalPaid = displayTransaction.transaction_payments.reduce((sum, p) => sum + p.amount, 0);
+  const remainingAmount = displayTransaction.final_price - totalPaid;
+  const totalHpp = displayTransaction.hpp_items.reduce((sum, item) => sum + item.amount, 0);
+  const estimatedProfit = displayTransaction.final_price - totalHpp;
 
   const handleVoid = async () => {
     if (!voidReason || voidReason.trim().length < 3) {
@@ -108,7 +132,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: transaction.id,
+          id: displayTransaction.id,
           reason: voidReason.trim(),
         }),
       });
@@ -132,7 +156,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
   const handlePermanentDelete = async () => {
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/transactions?id=${transaction.id}`, {
+      const response = await fetch(`/api/transactions?id=${displayTransaction.id}`, {
         method: "DELETE",
       });
 
@@ -157,12 +181,12 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-2xl md:text-3xl font-bold font-mono">
-              {transaction.transaction_number}
+              {displayTransaction.transaction_number}
             </h1>
-            <StatusBadge status={transaction.status} />
+            <StatusBadge status={displayTransaction.status} />
           </div>
           <p className="text-muted-foreground text-sm">
-            Dibuat {formatDate(transaction.created_at)}
+            Dibuat {formatDate(displayTransaction.created_at)}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -173,7 +197,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           {canEdit && (
             <Button
               variant="outline"
-              onClick={() => router.push(`/transaksi/${transaction.id}/edit`)}
+              onClick={() => router.push(`/transaksi/${displayTransaction.id}/edit`)}
               className="gap-2"
             >
               <Pencil className="w-4 h-4" />
@@ -202,7 +226,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           )}
           <Button
             variant="secondary"
-            onClick={() => router.push(`/transaksi/${transaction.id}/invoice`)}
+            onClick={() => router.push(`/transaksi/${displayTransaction.id}/invoice`)}
             className="gap-2"
           >
             <FileText className="w-4 h-4" />
@@ -210,7 +234,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           </Button>
           {canAddPayment && (
             <Button
-              onClick={() => router.push(`/transaksi/${transaction.id}/pelunasan`)}
+              onClick={() => router.push(`/transaksi/${displayTransaction.id}/pelunasan`)}
               className="gap-2"
             >
               <DollarSign className="w-4 h-4" />
@@ -233,20 +257,20 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
                   <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider mb-1">
                     Pelanggan
                   </p>
-                  <p className="font-semibold">{transaction.customer_name || "—"}</p>
+                  <p className="font-semibold">{displayTransaction.customer_name || "—"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider mb-1">
                     Deskripsi
                   </p>
-                  <p className="font-semibold">{transaction.description || "—"}</p>
+                  <p className="font-semibold">{displayTransaction.description || "—"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wider mb-1">
                     Harga Jual
                   </p>
                   <p className="text-xl font-bold text-primary">
-                    {formatCurrency(transaction.final_price)}
+                    {formatCurrency(displayTransaction.final_price)}
                   </p>
                 </div>
                 <div>
@@ -254,7 +278,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
                     Tipe Pembayaran
                   </p>
                   <p className="font-semibold">
-                    {transaction.payment_type === "CASH" ? "💵 Cash" : "💳 DP (Uang Muka)"}
+                    {displayTransaction.payment_type === "CASH" ? "💵 Cash" : "💳 DP (Uang Muka)"}
                   </p>
                 </div>
               </div>
@@ -274,7 +298,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => router.push(`/transaksi/${transaction.id}/hpp`)}
+                  onClick={() => router.push(`/transaksi/${displayTransaction.id}/hpp`)}
                   className="gap-2"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -282,7 +306,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
                 </Button>
               </div>
 
-              {transaction.hpp_items.length === 0 ? (
+              {displayTransaction.hpp_items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 text-center">
                   <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
                     <Package className="w-6 h-6 text-muted-foreground" />
@@ -302,7 +326,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transaction.hpp_items.map((item) => (
+                    {displayTransaction.hpp_items.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell className="font-semibold">{item.name}</TableCell>
                         <TableCell>{formatCurrency(item.amount)}</TableCell>
@@ -315,7 +339,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
                 </Table>
               )}
 
-              {transaction.hpp_items.length > 0 && (
+              {displayTransaction.hpp_items.length > 0 && (
                 <div className="mt-4 p-4 rounded-lg bg-accent/30 border border-border">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Estimasi Laba Kotor:</span>
@@ -344,7 +368,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Total Tagihan</span>
-                  <span className="font-bold">{formatCurrency(transaction.final_price)}</span>
+                  <span className="font-bold">{formatCurrency(displayTransaction.final_price)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Total Dibayar</span>
@@ -372,7 +396,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           <Card className="shadow-sm">
             <CardContent className="p-6">
               <h3 className="text-lg font-bold mb-4">Riwayat Pembayaran</h3>
-              {transaction.transaction_payments.length === 0 ? (
+              {displayTransaction.transaction_payments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
                     <DollarSign className="w-6 h-6 text-muted-foreground" />
@@ -381,7 +405,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {transaction.transaction_payments.map((payment) => (
+                  {displayTransaction.transaction_payments.map((payment) => (
                     <div
                       key={payment.id}
                       className="flex justify-between items-center p-3 rounded-lg bg-accent/30 border border-border"
@@ -406,16 +430,16 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           </Card>
 
           {/* Void Info (if BATAL) */}
-          {transaction.status === "BATAL" && (
+          {displayTransaction.status === "BATAL" && (
             <Card className="shadow-sm border-destructive/30">
               <CardContent className="p-6">
                 <h3 className="text-lg font-bold text-destructive mb-2">Transaksi Dibatalkan</h3>
                 <p className="text-sm text-muted-foreground">
-                  <strong>Alasan:</strong> {transaction.void_reason || "—"}
+                  <strong>Alasan:</strong> {displayTransaction.void_reason || "—"}
                 </p>
-                {transaction.void_at && (
+                {displayTransaction.void_at && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    {formatDate(transaction.void_at)}
+                    {formatDate(displayTransaction.void_at)}
                   </p>
                 )}
               </CardContent>
@@ -430,7 +454,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           <DialogHeader>
             <DialogTitle>Batalkan Transaksi</DialogTitle>
             <DialogDescription>
-              Yakin batalkan transaksi <strong className="text-foreground">{transaction.transaction_number}</strong>?
+              Yakin batalkan transaksi <strong className="text-foreground">{displayTransaction.transaction_number}</strong>?
               Data tetap tersimpan, hanya status berubah.
             </DialogDescription>
           </DialogHeader>
@@ -473,22 +497,22 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
             </AlertDialogTitle>
             <AlertDialogDescription>
               Yakin hapus permanen{" "}
-              <strong className="text-foreground">{transaction.transaction_number}</strong>?
+              <strong className="text-foreground">{displayTransaction.transaction_number}</strong>?
             </AlertDialogDescription>
           </AlertDialogHeader>
 
           <div className="bg-accent/30 rounded-lg p-3 text-sm">
             <p className="font-semibold mb-1">Data yang akan ikut terhapus:</p>
             <ul className="list-disc list-inside text-muted-foreground space-y-0.5">
-              <li>{transaction.transaction_payments.length} pembayaran</li>
-              <li>{transaction.hpp_items.length} item HPP</li>
+              <li>{displayTransaction.transaction_payments.length} pembayaran</li>
+              <li>{displayTransaction.hpp_items.length} item HPP</li>
             </ul>
           </div>
 
           <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-3">
             <p className="text-destructive text-xs font-semibold">
               ⚠️ Tindakan ini TIDAK BISA DIURUNGKAN.
-              {transaction.status === "LUNAS" && " Transaksi LUNAS — data keuangan akan hilang!"}
+              {displayTransaction.status === "LUNAS" && " Transaksi LUNAS — data keuangan akan hilang!"}
             </p>
           </div>
 

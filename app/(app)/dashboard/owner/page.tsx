@@ -9,6 +9,7 @@ import { formatCurrency, formatDate } from "@/lib/formatters";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { OwnerChartWrapper } from "./owner-chart-wrapper";
 import { Sparkline } from "./sparkline";
+import { PeriodSelector } from "./period-selector";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,10 +25,10 @@ import { TrendingUp, TrendingDown, DollarSign, Percent, ArrowRight } from "lucid
 
 
 const periodOptions: { label: string; value: PeriodType }[] = [
-  { label: "Harian", value: "daily" },
-  { label: "Mingguan", value: "weekly" },
-  { label: "Bulanan", value: "monthly" },
-  { label: "Tahunan", value: "yearly" },
+  { label: "Hari", value: "daily" },
+  { label: "Minggu", value: "weekly" },
+  { label: "Bulan", value: "monthly" },
+  { label: "Tahun", value: "yearly" },
 ];
 
 function extractSparklineData(
@@ -115,23 +116,7 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
             {period === "yearly" && "Tahun ini dibanding tahun lalu (5 tahun terakhir di chart)."}
           </p>
         </div>
-        <div className="flex gap-3 flex-wrap">
-          <div className="flex rounded-lg border border-border overflow-hidden">
-            {periodOptions.map((opt) => (
-              <Link
-                key={opt.value}
-                href={`/dashboard/owner?period=${opt.value}`}
-                className={`px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                  period === opt.value
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-accent hover:text-primary text-foreground"
-                }`}
-              >
-                {opt.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+        <PeriodSelector currentPeriod={period} />
       </div>
 
       {/* KPI Cards */}

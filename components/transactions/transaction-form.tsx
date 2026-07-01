@@ -111,6 +111,27 @@ export function TransactionForm({ initialData, transactionId, isEdit }: Props) {
         }
 
         toast.success(result.message);
+
+        // ⚡ Optimistic: simpan data ke sessionStorage agar halaman detail render instan
+        try {
+          sessionStorage.setItem(
+            "pending_trx",
+            JSON.stringify({
+              id: result.data.id,
+              transaction_number: result.data.transaction_number,
+              customer_name: payload.customer_name,
+              description: payload.description,
+              final_price: payload.final_price,
+              payment_type: payload.payment_type,
+              dp_amount: payload.dp_amount,
+              status: payload.payment_type === "CASH" ? "LUNAS" : "DP",
+              created_at: new Date().toISOString(),
+            })
+          );
+        } catch {
+          // sessionStorage tidak tersedia — fallback normal (halaman detail fetch dari DB)
+        }
+
         router.push(`/transaksi/${result.data.id}`);
       }
     } catch (error: unknown) {

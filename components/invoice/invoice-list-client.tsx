@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from "@/lib/formatters";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase-client";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -240,12 +241,16 @@ export function InvoiceListClient({
                         {inv.remaining_amount > 0 ? formatCurrency(inv.remaining_amount) : "✓ Lunas"}
                       </TableCell>
                       <TableCell>
-                        <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                          inv.status === "PAID" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
-                          inv.status === "DRAFT" ? "bg-muted text-muted-foreground" :
-                          inv.status === "SENT" ? "bg-primary/10 text-primary" :
-                          "bg-destructive/10 text-destructive"
-                        }`}>{inv.status}</span>
+                        <Badge
+                          className={
+                            inv.status === "PAID" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                            inv.status === "DRAFT" ? "bg-muted text-muted-foreground" :
+                            inv.status === "SENT" ? "bg-primary/10 text-primary" :
+                            "bg-destructive/10 text-destructive"
+                          }
+                        >
+                          {inv.status}
+                        </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {formatDate(inv.created_at)}

@@ -2,9 +2,12 @@
 
 import { createServerSupabaseClient, getCurrentUser } from "@/lib/supabase-server";
 import { operationalCostSchema } from "@/lib/validation";
-import { revalidatePath } from "next/cache";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { z } from "zod";
 import type { ActionState } from "@/types/common";
+
+// Cache tag untuk invalidasi
+const CACHE_TAG = "operational";
 
 // ============================================================
 // Types
@@ -55,7 +58,7 @@ export async function createOperationalCost(
     if (error) return { success: false, message: error.message };
     if (!data) return { success: false, message: "Gagal menambahkan biaya operasional" };
 
-    revalidatePath("/operasional");
+    revalidateTag(CACHE_TAG, { expire: 0 });
     return { success: true, data: { id: data.id }, message: "Biaya berhasil ditambahkan" };
   } catch (error) {
     return {
@@ -109,7 +112,7 @@ export async function updateOperationalCost(
 
     if (error) return { success: false, message: error.message };
 
-    revalidatePath("/operasional");
+    revalidateTag(CACHE_TAG, { expire: 0 });
     return { success: true, message: "Biaya berhasil diupdate" };
   } catch (error) {
     return {
@@ -147,7 +150,7 @@ export async function deleteOperationalCost(id: string): Promise<ActionState> {
 
     if (error) return { success: false, message: error.message };
 
-    revalidatePath("/operasional");
+    revalidateTag(CACHE_TAG, { expire: 0 });
     return { success: true, message: "Biaya berhasil dihapus" };
   } catch (error) {
     return {
@@ -158,7 +161,69 @@ export async function deleteOperationalCost(id: string): Promise<ActionState> {
 }
 
 // ============================================================
-// READ — Distinct Categories
+// ⚡ READ — Cached: list biaya operasional + distinct categories
+// ============================================================
+export interface OperationalCostsListResult {
+  costs: OperationalCostRow[];
+  total: number;
+  totalPages: number;
+  distinctCategories: string[];
+}
+
+export const getOperationalCostsList = unstable_cache(
+  async (params: { bulan?: string; page?: number; limit?: number } = {}): Promise<OperationalCostsListResult> => {
+    const supabase = await createServerSupabaseClient();
+    const { bulan, page = 1, limit = 10 } = params;
+    const offset = (page - 1) * limit;
+
+    // Hitung date range dari bulan
+    let start: string, end: string;
+    if (bulan) {
+      const [tahun, bulanNum] = bulan.split("-").map(Number);
+      start = `${tahun}-${String(bulanNum).padStart(2, "0")}-01`;
+      const nextMonth = bulanNum === 12 ? 1 : bulanNum + 1;
+      const nextYear = bulanNum === 12 ? tahun + 1 : tahun;
+      end = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+    } else {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      start = `${y}-${m}-01`;
+      const nextMonth = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
+      const nextYear = now.getMonth() === 11 ? y + 1 : y;
+      end = `${nextYear}-${String(nextMonth + 1).padStart(2, "0")}-01`;
+    }
+
+    // Query costs + distinct categories paralel
+    const [{ data: costs, count: total }, { data: allCategories }] = await Promise.all([
+      supabase
+        .from("operational_costs")
+        .select("*", { count: "exact" })
+        .lte("period_start", end)
+        .gte("period_end", start)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1),
+      supabase
+        .from("operational_costs")
+        .select("category")
+        .not("category", "is", null),
+    ]);
+
+    const distinctCategories = [...new Set((allCategories || []).map((r) => r.category).filter(Boolean))].sort();
+
+    return {
+      costs: (costs || []) as OperationalCostRow[],
+      total: total || 0,
+      totalPages: Math.ceil((total || 0) / limit),
+      distinctCategories,
+    };
+  },
+  ["operational-costs-list"],
+  { revalidate: 30, tags: [CACHE_TAG] }
+);
+
+// ============================================================
+// READ — Distinct Categories (legacy, tetap ada untuk backward compat)
 // ============================================================
 export async function getDistinctCategories(): Promise<string[]> {
   try {

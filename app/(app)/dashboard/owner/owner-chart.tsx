@@ -61,14 +61,14 @@ export function OwnerChart({ data, period = "monthly" }: Props) {
   };
 
   return (
-    <div className="rounded-2xl overflow-hidden p-6">
-      <h3 className="text-xl font-bold text-foreground mb-6">
+    <div className="rounded-2xl overflow-hidden p-4 md:p-6">
+      <h3 className="text-lg md:text-xl font-bold text-foreground mb-4 md:mb-6">
         Omzet & Laba
       </h3>
-      <ResponsiveContainer width="100%" height={400}>
+      <ResponsiveContainer width="100%" height={350}>
         <ComposedChart
           data={chartData}
-          margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
+          margin={{ top: 5, right: 10, left: 10, bottom: 30 }}
         >
           <defs>
             <linearGradient id="colorOmzet" x1="0" y1="0" x2="0" y2="1">
@@ -91,15 +91,20 @@ export function OwnerChart({ data, period = "monthly" }: Props) {
           />
           <XAxis
             dataKey="name"
-            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+            tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
             axisLine={{ stroke: "var(--border)" }}
             tickLine={false}
+            angle={-45}
+            textAnchor="end"
+            height={60}
+            interval={0}
           />
           <YAxis
-            tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+            tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
             axisLine={{ stroke: "var(--border)" }}
             tickLine={false}
             tickFormatter={formatRupiahCompact}
+            width={55}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend

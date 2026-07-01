@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser, getUserProfile } from "@/lib/supabase-server";
-import { getInvoices } from "@/lib/transactions";
+import { getInvoicesCached } from "@/lib/transactions";
 import { InvoiceListClient } from "@/components/invoice/invoice-list-client";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +25,8 @@ export default async function InvoicePage({ searchParams }: PageProps) {
   const status = params.status || "semua";
   const page = parseInt(params.page || "1", 10);
 
-  const result = await getInvoices({ q, status, page, limit: 10 });
+  // ⚡ Pakai cached function — data di-cache 30 detik di server
+  const result = await getInvoicesCached({ q, status, page, limit: 10 });
 
   return (
     <div className="p-4 md:p-8">
