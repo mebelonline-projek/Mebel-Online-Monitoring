@@ -7,7 +7,7 @@ import {
 } from "@/lib/transactions";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { StatusBadge } from "@/components/shared/status-badge";
-import dynamic from "next/dynamic";
+import { OwnerChartWrapper } from "./owner-chart-wrapper";
 import { Sparkline } from "./sparkline";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -22,18 +22,6 @@ import {
 } from "@/components/ui/table";
 import { TrendingUp, TrendingDown, DollarSign, Percent, ArrowRight } from "lucide-react";
 
-// ⚡ Lazy load recharts (~600KB) — hanya saat dashboard dibuka
-const OwnerChart = dynamic(
-  () => import("./owner-chart").then((mod) => mod.OwnerChart),
-  {
-    loading: () => (
-      <div className="h-[400px] flex items-center justify-center text-muted-foreground">
-        Memuat grafik...
-      </div>
-    ),
-    ssr: false,
-  }
-);
 
 const periodOptions: { label: string; value: PeriodType }[] = [
   { label: "Harian", value: "daily" },
@@ -209,7 +197,7 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
       {stats.monthlyData.length > 0 && (
         <Card className="shadow-sm">
           <CardContent className="p-6">
-            <OwnerChart data={stats.monthlyData} period={period} />
+            <OwnerChartWrapper data={stats.monthlyData} period={period} />
           </CardContent>
         </Card>
       )}

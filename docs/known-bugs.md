@@ -24,7 +24,7 @@
 | 13 | **Filter biaya operasional pakai `created_at`** | Biaya difilter berdasarkan tanggal input, bukan periode biaya | Ganti ke overlap query: `lte("period_start", end) & gte("period_end", start)` | `app/(app)/operasional/page.tsx` |
 | 14 | **Runtime Error — Event handler di Server Component** | `components/ui/button.tsx` tidak memiliki directive `"use client"`. Di Next.js 16, komponen dengan event handler wajib Client Component. | ✅ **FIXED** — `"use client"` sudah ditambahkan di semua UI components (`button.tsx`, `input.tsx`, dll) | `components/ui/button.tsx`, `components/ui/input.tsx` |
 | 15 | **Console Error — Script tag di ThemeProvider** | Library `next-themes` v0.4.6 inject `<script>` tag. React 19 memberi warning. | ✅ **FIXED** — Sudah diganti custom ThemeProvider (`providers/theme-provider.tsx`) + `next/script` di layout | `providers/theme-provider.tsx`, `app/layout.tsx` |
-| 16 | **MIDDLEWARE_INVOCATION_FAILED 500 di Vercel** | Next.js 16 deprecate `middleware.ts`, export function `middleware` tidak dikenali | ✅ **FIXED** — `middleware.ts` sudah berfungsi normal di Vercel, tidak perlu rename | `middleware.ts` |
+| 16 | **MIDDLEWARE_INVOCATION_FAILED 500 di Vercel** | Next.js 16 deprecate `middleware.ts`, export function `middleware` tidak dikenali | ⚠️ **PENDING** — `middleware.ts` masih berfungsi tapi Next.js 16 memberi warning deprecation. Rename ke `proxy.ts` direncanakan tapi belum dilakukan. | `middleware.ts` |
 
 ---
 
