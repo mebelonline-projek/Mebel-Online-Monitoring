@@ -70,7 +70,7 @@ export async function getUserProfile() {
     .from("users")
     .select("id, name, email, role, avatar_url")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
   return data;
 }

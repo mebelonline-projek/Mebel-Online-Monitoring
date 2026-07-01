@@ -7,7 +7,7 @@ import {
 } from "@/lib/transactions";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { OwnerChart } from "./owner-chart";
+import dynamic from "next/dynamic";
 import { Sparkline } from "./sparkline";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,18 @@ import {
 } from "@/components/ui/table";
 import { TrendingUp, TrendingDown, DollarSign, Percent, ArrowRight } from "lucide-react";
 
-export const dynamic = "force-dynamic";
+// ⚡ Lazy load recharts (~600KB) — hanya saat dashboard dibuka
+const OwnerChart = dynamic(
+  () => import("./owner-chart").then((mod) => mod.OwnerChart),
+  {
+    loading: () => (
+      <div className="h-[400px] flex items-center justify-center text-muted-foreground">
+        Memuat grafik...
+      </div>
+    ),
+    ssr: false,
+  }
+);
 
 const periodOptions: { label: string; value: PeriodType }[] = [
   { label: "Harian", value: "daily" },
@@ -63,36 +74,43 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
     d.revenue > 0 ? Math.round((d.netProfit / d.revenue) * 10000) / 100 : 0
   );
 
+  const netMarginDisplay = stats.revenue > 0 ? `${stats.netMargin}%` : "-";
+
   const kpiCards = [
     {
-      title: "Uang Masuk",
+      title: "Omzet",
+      subtitle: "Total Penjualan",
       value: formatCurrency(stats.revenue),
       trend: stats.revenueTrend,
       icon: DollarSign,
       sparklineData: revenueSparkline,
     },
     {
-      title: "Gross Profit",
+      title: "Laba Kotor",
+      subtitle: "Omzet - HPP",
       value: formatCurrency(stats.grossProfit),
       trend: stats.grossProfitTrend,
       icon: TrendingUp,
       sparklineData: grossProfitSparkline,
     },
     {
-      title: "Net Profit",
+      title: "Laba Bersih",
+      subtitle: "Laba Kotor - Biaya Operasional",
       value: formatCurrency(stats.netProfit),
       trend: stats.netProfitTrend,
       icon: TrendingUp,
       sparklineData: netProfitSparkline,
     },
     {
-      title: "Net Margin",
-      value: `${stats.netMargin}%`,
-      trend: stats.netMarginTrend,
+      title: "Margin Bersih",
+      subtitle: "Persentase Laba Bersih dari Omzet",
+      value: netMarginDisplay,
+      trend: stats.revenue > 0 ? stats.netMarginTrend : 0,
       icon: Percent,
       sparklineData: marginSparkline,
     },
   ];
+
   const periodLabel =
     periodOptions.find((o) => o.value === period)?.label.toLowerCase() || "periode";
 
@@ -101,12 +119,12 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Financial Hub</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Ringkasan Keuangan</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {period === "daily" && "Performa hari ini vs kemarin (chart 30 hari terakhir)."}
-            {period === "weekly" && "Performa minggu ini vs minggu lalu (chart 12 minggu terakhir)."}
-            {period === "monthly" && "Performa bulan ini vs bulan lalu (chart 12 bulan terakhir)."}
-            {period === "yearly" && "Performa tahun ini vs tahun lalu (chart 5 tahun terakhir)."}
+            {period === "daily" && "Hari ini dibanding kemarin (30 hari terakhir di chart)."}
+            {period === "weekly" && "Minggu ini dibanding minggu lalu (12 minggu terakhir di chart)."}
+            {period === "monthly" && "Bulan ini dibanding bulan lalu (12 bulan terakhir di chart)."}
+            {period === "yearly" && "Tahun ini dibanding tahun lalu (5 tahun terakhir di chart)."}
           </p>
         </div>
         <div className="flex gap-3 flex-wrap">
@@ -141,33 +159,42 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
               key={card.title}
               className="shadow-sm hover:-translate-y-1 transition-all duration-300"
             >
-              <CardContent className="p-6 flex flex-col justify-between h-40">
+              <CardContent className="p-6 flex flex-col justify-between h-44">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs uppercase tracking-wider font-bold text-muted-foreground">
-                    {card.title}
-                  </span>
+                  <div>
+                    <span className="text-xs uppercase tracking-wider font-bold text-muted-foreground">
+                      {card.title}
+                    </span>
+                    {"subtitle" in card && card.subtitle && (
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                        ({card.subtitle})
+                      </p>
+                    )}
+                  </div>
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                     <Icon className="w-5 h-5 text-primary" />
                   </div>
                 </div>
                 <div className="text-2xl font-bold tracking-tight">{card.value}</div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className={`text-xs font-bold inline-flex items-center gap-0.5 ${
-                      card.trend >= 0
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-destructive"
-                    }`}
-                  >
-                    {card.trend >= 0 ? (
+                  {card.trend > 0 ? (
+                    <span className="text-xs font-bold inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
                       <TrendingUp className="w-3 h-3" />
-                    ) : (
+                      Naik {card.trend}%
+                    </span>
+                  ) : card.trend < 0 ? (
+                    <span className="text-xs font-bold inline-flex items-center gap-0.5 text-destructive">
                       <TrendingDown className="w-3 h-3" />
-                    )}
-                    {card.trend >= 0 ? "+" : ""}
-                    {card.trend}%
-                  </span>
-                  <span className="text-xs text-muted-foreground">vs prev {periodLabel}</span>
+                      Turun {Math.abs(card.trend)}%
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold text-muted-foreground">
+                      — Tetap
+                    </span>
+                  )}
+                  {card.trend !== 0 && (
+                    <span className="text-xs text-muted-foreground">dari {periodLabel} lalu</span>
+                  )}
                 </div>
                 {card.sparklineData.length >= 2 && (
                   <Sparkline data={card.sparklineData} trend={card.trend} className={sparkColor} />
@@ -177,7 +204,8 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
           );
         })}
       </div>
-      {/* Chart */}
+
+      {/* Chart — lazy loaded recharts */}
       {stats.monthlyData.length > 0 && (
         <Card className="shadow-sm">
           <CardContent className="p-6">
@@ -190,10 +218,10 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
       <Card className="shadow-sm overflow-hidden">
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold">Recent Transactions</h3>
+            <h3 className="text-lg font-bold">Transaksi Terbaru</h3>
             <Button variant="link" asChild className="gap-1 text-xs font-bold uppercase tracking-wider">
               <Link href="/transaksi">
-                View All History
+                Lihat Semua
                 <ArrowRight className="w-3 h-3" />
               </Link>
             </Button>
@@ -208,8 +236,8 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Transaksi</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Amount</TableHead>
+                  <TableHead>Pelanggan</TableHead>
+                  <TableHead>Jumlah</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Tanggal</TableHead>
                 </TableRow>

@@ -5,9 +5,11 @@
 // ============================================================
 
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Printer } from "lucide-react";
+import { ArrowLeft, Printer, Download } from "lucide-react";
+import { toast } from "sonner";
 
 interface PaymentItem {
   id: string;
@@ -47,8 +49,36 @@ export function NotaDocument({
   store_address = "",
   store_phone = "",
   logo_url = "/logo.webp",
-}: NotaProps) {
+  transaction_id,
+}: NotaProps & { transaction_id?: string }) {
   const router = useRouter();
+  const [savingPdf, setSavingPdf] = useState(false);
+
+  const handleSavePdf = async () => {
+    if (!transaction_id) {
+      toast.error("ID transaksi tidak tersedia");
+      return;
+    }
+    setSavingPdf(true);
+    try {
+      const res = await fetch(`/api/nota/${transaction_id}`);
+      if (!res.ok) throw new Error("Gagal mengambil PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `NOTA-${transaction_number}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Nota berhasil disimpan sebagai PDF");
+    } catch {
+      toast.error("Gagal menyimpan nota sebagai PDF");
+    } finally {
+      setSavingPdf(false);
+    }
+  };
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remaining = final_price - totalPaid;
 
@@ -62,6 +92,10 @@ export function NotaDocument({
         <Button size="sm" onClick={() => window.print()} className="gap-1">
           <Printer className="w-3.5 h-3.5" />
           Cetak Nota
+        </Button>
+        <Button size="sm" variant="outline" onClick={handleSavePdf} disabled={savingPdf} className="gap-1">
+          <Download className="w-3.5 h-3.5" />
+          {savingPdf ? "Menyimpan..." : "Simpan PDF"}
         </Button>
       </div>
 

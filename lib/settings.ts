@@ -50,9 +50,10 @@ export async function updateStoreSettings(
       })
       .eq("id", prevState.data?.id || "")
       .select("*")
-      .single();
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
+    if (!data) throw new Error("Gagal menyimpan pengaturan toko");
 
     revalidatePath("/pengaturan");
     return {

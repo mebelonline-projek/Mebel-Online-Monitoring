@@ -12,6 +12,7 @@ import { hppItemSchema } from "@/lib/validation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -248,12 +249,10 @@ export function HppManagerClient({
                 <label className="text-sm font-medium">
                   Jumlah (Rp) <span className="text-destructive">*</span>
                 </label>
-                <Input
-                  type="number"
-                  min={1}
+                <CurrencyInput
                   value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                  placeholder="0"
+                  onChange={(val) => setForm({ ...form, amount: val })}
+                  placeholder="1.000.000"
                   className={formErrors.amount ? "border-destructive" : ""}
                 />
                 {formErrors.amount && <p className="text-destructive text-xs">{formErrors.amount}</p>}

@@ -9,6 +9,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -386,11 +387,10 @@ export function OperationalCostListClient({
 
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Jumlah (Rp) <span className="text-destructive">*</span></label>
-              <Input
-                type="number"
+              <CurrencyInput
                 value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                placeholder="500000"
+                onChange={(val) => setForm({ ...form, amount: val })}
+                placeholder="1.000.000"
                 className={formErrors.amount ? "border-destructive" : ""}
               />
               {formErrors.amount && <p className="text-destructive text-xs">{formErrors.amount}</p>}

@@ -13,6 +13,7 @@ import { formatCurrency } from "@/lib/formatters";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Save, ArrowLeft } from "lucide-react";
 
@@ -157,12 +158,10 @@ export function TransactionForm({ initialData, transactionId, isEdit }: Props) {
                 <label className="text-sm font-medium">
                   Harga Jual <span className="text-destructive">*</span>
                 </label>
-                <Input
-                  type="number"
-                  min={1}
+                <CurrencyInput
                   value={form.final_price}
-                  onChange={(e) => setForm({ ...form, final_price: e.target.value })}
-                  placeholder="Rp 0"
+                  onChange={(val) => setForm({ ...form, final_price: val })}
+                  placeholder="1.000.000"
                   className={formErrors.final_price ? "border-destructive" : ""}
                 />
                 {formErrors.final_price && (
@@ -201,11 +200,9 @@ export function TransactionForm({ initialData, transactionId, isEdit }: Props) {
                   <label className="text-sm font-medium">
                     Jumlah DP <span className="text-destructive">*</span>
                   </label>
-                  <Input
-                    type="number"
-                    min={1}
+                  <CurrencyInput
                     value={form.dp_amount}
-                    onChange={(e) => setForm({ ...form, dp_amount: e.target.value })}
+                    onChange={(val) => setForm({ ...form, dp_amount: val })}
                     placeholder={`Min Rp 1, maks ${formatCurrency(Number(form.final_price) - 1 || 0)}`}
                     className={formErrors.dp_amount ? "border-destructive" : ""}
                   />

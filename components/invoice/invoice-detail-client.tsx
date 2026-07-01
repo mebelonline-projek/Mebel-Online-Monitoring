@@ -24,7 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Trash2, Download, FileText } from "lucide-react";
+import { ArrowLeft, Trash2, Download, FileText, Printer } from "lucide-react";
 
 interface InvoiceDetail {
   id: string;
@@ -89,6 +89,10 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
     window.open(`/api/invoice/${invoice.id}`, "_blank");
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   const allTransactions =
     invoice.invoice_items?.map((item) => item.transactions).filter(Boolean) || [];
   const totalPaid = invoice.total_paid;
@@ -134,14 +138,18 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
           )}
           <Button onClick={handleDownloadPDF} className="gap-2">
             <Download className="w-4 h-4" />
-            Download PDF
+            Unduh PDF
+          </Button>
+          <Button variant="outline" onClick={handlePrint} className="gap-2">
+            <Printer className="w-4 h-4" />
+            Cetak Invoice
           </Button>
         </div>
       </div>
 
       {/* INVOICE PREVIEW CARD — kept as physical invoice style */}
       <Card className="overflow-hidden shadow-sm">
-        <div className="bg-white text-black p-8 md:p-12 lg:p-16 dark:bg-white dark:text-black">
+        <div className="bg-white text-black p-8 md:p-12 lg:p-16 dark:bg-white dark:text-black" id="invoice-print-area">
           {/* HEADER */}
           <div className="flex flex-row justify-between items-start mb-8 pb-6 border-b-2 border-[#800000]">
             <div className="flex items-center gap-4">
@@ -263,13 +271,14 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
         </div>
       </Card>
 
-      {/* Download button bottom */}
-      <div className="flex justify-center">
-        <Button onClick={handleDownloadPDF} size="lg" className="gap-2">
-          <Download className="w-5 h-5" />
-          Download PDF
-        </Button>
-      </div>
+      {/* Print CSS */}
+      <style jsx global>{`
+        @media print {
+          body * { visibility: hidden; }
+          #invoice-print-area, #invoice-print-area * { visibility: visible; }
+          #invoice-print-area { position: absolute; left: 0; top: 0; width: 100%; max-width: 100%; border: none; box-shadow: none; padding: 20px; }
+        }
+      `}</style>
 
       {/* Delete Alert */}
       <AlertDialog open={showDelete} onOpenChange={setShowDelete}>

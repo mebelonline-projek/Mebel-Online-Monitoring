@@ -4,6 +4,7 @@
 // Dipanggil dari Server Components untuk membaca data store_settings.
 // ============================================================
 
+import { cache } from "react";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export interface StoreSettings {
@@ -15,10 +16,10 @@ export interface StoreSettings {
   updated_at: string | null;
 }
 
-export async function getStoreSettings(): Promise<StoreSettings | null> {
+export const getStoreSettings = cache(async (): Promise<StoreSettings | null> => {
   try {
     const supabase = await createServerSupabaseClient();
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("store_settings")
       .select("*")
       .limit(1)
@@ -28,4 +29,4 @@ export async function getStoreSettings(): Promise<StoreSettings | null> {
   } catch {
     return null;
   }
-}
+});

@@ -50,9 +50,10 @@ export async function createOperationalCost(
         created_by: user.id,
       })
       .select("id")
-      .single();
+      .maybeSingle();
 
     if (error) return { success: false, message: error.message };
+    if (!data) return { success: false, message: "Gagal menambahkan biaya operasional" };
 
     revalidatePath("/operasional");
     return { success: true, data: { id: data.id }, message: "Biaya berhasil ditambahkan" };

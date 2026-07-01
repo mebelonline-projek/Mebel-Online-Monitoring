@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { paymentSchema } from "@/lib/validation";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "sonner";
 
 interface PaymentRecord {
@@ -191,14 +192,11 @@ export function PelunasanFormClient({
                 Bayar Lunas ({formatCurrency(remaining)})
               </button>
             </div>
-            <input
-              type="number"
-              min={1}
-              max={remaining}
+            <CurrencyInput
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className={`dark-input w-full ${formErrors.amount ? "!border-destructive" : ""}`}
-              placeholder="0"
+              onChange={(val) => setAmount(val)}
+              className={formErrors.amount ? "border-destructive" : ""}
+              placeholder="1.000.000"
             />
             {formErrors.amount && (
               <p className="text-destructive text-xs mt-1">{formErrors.amount}</p>

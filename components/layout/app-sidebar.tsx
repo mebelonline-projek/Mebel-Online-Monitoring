@@ -40,6 +40,7 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
   const supabase = createClient();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -50,8 +51,19 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
 
   return (
     <aside className="hidden lg:flex h-screen w-64 flex-col fixed left-0 top-0 z-50 py-6 bg-sidebar border-r border-sidebar-border">
-      {/* Logo */}
-      <div className="px-6 mb-10">
+      {/* Logo + Brand — centered */}
+      <div className="px-6 mb-10 flex flex-col items-center text-center">
+        {!imgError && (
+          <div className="w-14 h-14 rounded-xl overflow-hidden bg-sidebar-accent/30 flex items-center justify-center mb-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.webp"
+              alt="Logo"
+              className="w-full h-full object-contain p-1"
+              onError={() => setImgError(true)}
+            />
+          </div>
+        )}
         <h1 className="text-xl font-bold tracking-tight" style={{ color: "var(--sidebar-primary)" }}>
           Mebel Online
         </h1>
@@ -106,11 +118,20 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
         )}
       </div>
 
-      {/* Profile + Logout */}
+      {/* Profile + Logo kecil + Logout */}
       <div className="px-6 pt-6 mt-auto border-t border-sidebar-border/50 flex flex-col gap-3">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full border border-primary/40 p-0.5 overflow-hidden flex items-center justify-center text-xs font-bold bg-accent text-muted-foreground">
-            {profile.name?.charAt(0)?.toUpperCase() || "U"}
+          {/* Logo kecil di kiri bawah */}
+          <div className="w-10 h-10 rounded-full border border-primary/40 overflow-hidden flex-shrink-0 bg-sidebar-accent/30 flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.webp"
+              alt="Logo"
+              className="w-full h-full object-contain p-0.5"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold truncate text-sidebar-foreground">{profile.name}</p>

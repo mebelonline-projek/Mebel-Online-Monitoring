@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import {
   ComposedChart,
   Bar,
-  Line,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -32,10 +32,10 @@ export function OwnerChart({ data, period = "monthly" }: Props) {
     [data]
   );
 
-  const formatRupiah = (value: number) => {
+  const formatRupiahCompact = (value: number) => {
     if (value >= 1_000_000_000) return `Rp ${(value / 1_000_000_000).toFixed(1)}M`;
     if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(0)}JT`;
-    return `Rp ${value.toLocaleString("id-ID")}`;
+    return formatCurrency(value);
   };
 
   const CustomTooltip = ({
@@ -61,15 +61,29 @@ export function OwnerChart({ data, period = "monthly" }: Props) {
   };
 
   return (
-    <div className="rounded-2xl overflow-hidden glass-panel p-6">
+    <div className="rounded-2xl overflow-hidden p-6">
       <h3 className="text-xl font-bold text-foreground mb-6">
-        Revenue & Profit Overview
+        Omzet & Laba
       </h3>
       <ResponsiveContainer width="100%" height={400}>
         <ComposedChart
           data={chartData}
           margin={{ top: 5, right: 20, left: 20, bottom: 5 }}
         >
+          <defs>
+            <linearGradient id="colorOmzet" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#64748b" stopOpacity={0.9} />
+              <stop offset="100%" stopColor="#64748b" stopOpacity={0.6} />
+            </linearGradient>
+            <linearGradient id="colorLabaKotor" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4} />
+              <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05} />
+            </linearGradient>
+            <linearGradient id="colorLabaBersih" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="#10b981" stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
           <CartesianGrid
             strokeDasharray="3 3"
             stroke="var(--border)"
@@ -85,7 +99,7 @@ export function OwnerChart({ data, period = "monthly" }: Props) {
             tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
             axisLine={{ stroke: "var(--border)" }}
             tickLine={false}
-            tickFormatter={formatRupiah}
+            tickFormatter={formatRupiahCompact}
           />
           <Tooltip content={<CustomTooltip />} />
           <Legend
@@ -93,25 +107,26 @@ export function OwnerChart({ data, period = "monthly" }: Props) {
           />
           <Bar
             dataKey="Omzet"
-            fill="#800000"
+            fill="url(#colorOmzet)"
             radius={[4, 4, 0, 0]}
-            barSize={20}
-            opacity={0.85}
+            barSize={24}
           />
-          <Line
+          <Area
             type="monotone"
             dataKey="Laba Kotor"
-            stroke="#818cf8"
-            strokeWidth={2}
-            dot={{ r: 4, fill: "#818cf8" }}
+            stroke="#3b82f6"
+            strokeWidth={2.5}
+            fill="url(#colorLabaKotor)"
+            dot={{ r: 4, fill: "#3b82f6", stroke: "var(--card)", strokeWidth: 2 }}
             activeDot={{ r: 6 }}
           />
-          <Line
+          <Area
             type="monotone"
             dataKey="Laba Bersih"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            dot={{ r: 4, fill: "#3b82f6" }}
+            stroke="#10b981"
+            strokeWidth={2.5}
+            fill="url(#colorLabaBersih)"
+            dot={{ r: 4, fill: "#10b981", stroke: "var(--card)", strokeWidth: 2 }}
             activeDot={{ r: 6 }}
           />
         </ComposedChart>

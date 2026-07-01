@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { createServerSupabaseClient, getCurrentUser } from "@/lib/supabase-server";
 import { transactionSchema, hppItemSchema, paymentSchema } from "@/lib/validation";
 import type { ActionState } from "@/types/common";
@@ -26,6 +27,14 @@ function createAdminClient() {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
+
+// ============================================================
+// Cache tag constants — digunakan untuk invalidasi
+// ============================================================
+const CACHE_TAGS = {
+  dashboard: "dashboard",
+  transactions: "transactions",
+} as const;
 
 // ============================================================
 // Types
@@ -108,10 +117,13 @@ export async function createTransaction(
         created_by: user.id,
       })
       .select("id, transaction_number")
-      .single();
+      .maybeSingle();
 
     if (txError) {
       return { success: false, message: txError.message };
+    }
+    if (!transaction) {
+      return { success: false, message: "Gagal membuat transaksi" };
     }
 
     const paymentAmount = isCash ? data.final_price : data.dp_amount;
@@ -130,6 +142,10 @@ export async function createTransaction(
       return { success: false, message: `Gagal membuat pembayaran: ${payError.message}` };
     }
 
+    // Invalidate cache — immediate expiry
+    revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+
     return {
       success: true,
       message: isCash
@@ -147,9 +163,10 @@ export async function createTransaction(
 
 // ============================================================
 // LIST — Daftar transaksi dengan filter + search + pagination
+// ⚡ Cache 30 detik, invalidasi via revalidateTag("transactions")
 // ============================================================
-export async function getTransactions(params: TransactionListParams = {}) {
-  try {
+export const getTransactions = unstable_cache(
+  async (params: TransactionListParams = {}) => {
     const supabase = await createServerSupabaseClient();
     const { q = "", status = "", page = 1, limit = 10 } = params;
     const offset = (page - 1) * limit;
@@ -197,17 +214,10 @@ export async function getTransactions(params: TransactionListParams = {}) {
       totalPages,
       currentPage: page,
     };
-  } catch (error) {
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : "Terjadi kesalahan",
-      data: [],
-      total: 0,
-      totalPages: 0,
-      currentPage: 1,
-    };
-  }
-}
+  },
+  ["transactions-list"],
+  { revalidate: 30, tags: [CACHE_TAGS.transactions] }
+);
 
 // ============================================================
 // GET BY ID — Detail transaksi
@@ -337,12 +347,10 @@ export async function updateTransaction(
     }
 
     // Update initial payment amount — JANGAN hapus + buat ulang!
-    // Hanya update amount pembayaran pertama agar sesuai dengan perubahan.
     const paymentAmount = isCash ? data.final_price : data.dp_amount;
     const existingPaymentsList = existingPayments || [];
 
     if (existingPaymentsList.length > 0) {
-      // Update pembayaran pertama yang sudah ada
       const { error: payError } = await supabase
         .from("transaction_payments")
         .update({
@@ -355,7 +363,6 @@ export async function updateTransaction(
         return { success: false, message: `Gagal update pembayaran: ${payError.message}` };
       }
     } else {
-      // Edge case: tidak ada pembayaran sama sekali (jarang terjadi) — buat baru
       const { error: payError } = await supabase
         .from("transaction_payments")
         .insert({
@@ -370,6 +377,10 @@ export async function updateTransaction(
         return { success: false, message: `Gagal membuat pembayaran: ${payError.message}` };
       }
     }
+
+    // Invalidate cache
+    revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
 
     return {
       success: true,
@@ -443,6 +454,10 @@ export async function voidTransaction(
       return { success: false, message: voidError.message };
     }
 
+    // Invalidate cache
+    revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+
     return {
       success: true,
       message: `Transaksi ${existing.transaction_number} berhasil dibatalkan`,
@@ -457,7 +472,6 @@ export async function voidTransaction(
 
 // ============================================================
 // HAPUS PERMANEN — Hard delete (OWNER ONLY, semua status)
-// Guardrail: cek invoice_items dulu, tolak jika terikat invoice
 // ============================================================
 export async function deleteTransactionPermanent(
   id: string
@@ -478,7 +492,6 @@ export async function deleteTransactionPermanent(
       return { success: false, message: "Hanya Owner yang bisa menghapus transaksi permanen" };
     }
 
-    // Cek transaksi
     const { data: existing, error: checkError } = await supabase
       .from("transactions")
       .select("id, transaction_number")
@@ -510,11 +523,9 @@ export async function deleteTransactionPermanent(
       };
     }
 
-    // Hapus child records secara manual (FK belum tentu CASCADE)
     await supabase.from("transaction_payments").delete().eq("transaction_id", id);
     await supabase.from("hpp_items").delete().eq("transaction_id", id);
 
-    // Hapus transaksi
     const { error: deleteError } = await supabase
       .from("transactions")
       .delete()
@@ -523,6 +534,10 @@ export async function deleteTransactionPermanent(
     if (deleteError) {
       return { success: false, message: deleteError.message };
     }
+
+    // Invalidate cache
+    revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
 
     return {
       success: true,
@@ -585,11 +600,17 @@ export async function addHppItem(
         created_by: user.id,
       })
       .select("*")
-      .single();
+      .maybeSingle();
 
     if (error) {
       return { success: false, message: error.message };
     }
+    if (!item) {
+      return { success: false, message: "Gagal menambahkan item HPP" };
+    }
+
+    // Invalidate cache — HPP mempengaruhi dashboard
+    revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
 
     return {
       success: true,
@@ -650,6 +671,8 @@ export async function updateHppItem(
       return { success: false, message: error.message };
     }
 
+    revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+
     return {
       success: true,
       message: `Item HPP "${parsed.data.name}" berhasil diupdate`,
@@ -677,6 +700,8 @@ export async function deleteHppItem(id: string): Promise<ActionState> {
     if (error) {
       return { success: false, message: error.message };
     }
+
+    revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
 
     return {
       success: true,
@@ -759,10 +784,13 @@ export async function addPayment(
         created_by: user.id,
       })
       .select("id")
-      .single();
+      .maybeSingle();
 
     if (payError) {
       return { success: false, message: payError.message };
+    }
+    if (!payment) {
+      return { success: false, message: "Gagal menambahkan pembayaran" };
     }
 
     const totalPaidAfter = totalPaidBefore + parsed.data.amount;
@@ -784,56 +812,70 @@ export async function addPayment(
         .eq("id", transactionId);
     }
 
-    // ── Auto-sync invoice totals ──
-    // Cari invoice yang punya transaksi ini, lalu update total_paid / remaining_amount
+    // ── Auto-sync invoice totals (OPTIMIZED) ──
+    // ⚡ Batch: ambil semua data dalam 4 query, aggregate di JS, update parallel
     const { data: linkedItems } = await supabase
       .from("invoice_items")
       .select("invoice_id")
       .eq("transaction_id", transactionId);
 
     if (linkedItems && linkedItems.length > 0) {
-      for (const item of linkedItems) {
-        // Ambil semua transaction_id dalam invoice ini
-        const { data: allItems } = await supabase
-          .from("invoice_items")
-          .select("transaction_id")
-          .eq("invoice_id", item.invoice_id);
+      const invoiceIds = [...new Set(linkedItems.map((i) => i.invoice_id))];
 
-        if (allItems && allItems.length > 0) {
-          const allTxIds = allItems.map((i) => i.transaction_id);
+      const { data: allInvoiceItems } = await supabase
+        .from("invoice_items")
+        .select("invoice_id, transaction_id")
+        .in("invoice_id", invoiceIds);
 
-          // Sum seluruh pembayaran dari semua transaksi di invoice
-          const { data: allPays } = await supabase
-            .from("transaction_payments")
-            .select("amount")
-            .in("transaction_id", allTxIds);
+      if (allInvoiceItems && allInvoiceItems.length > 0) {
+        const allTxIds = [...new Set(allInvoiceItems.map((i) => i.transaction_id))];
 
-          const syncedPaid = (allPays || []).reduce(
-            (sum, p) => sum + (p.amount || 0),
-            0
-          );
+        const { data: allPayments } = await supabase
+          .from("transaction_payments")
+          .select("amount, transaction_id")
+          .in("transaction_id", allTxIds);
 
-          // Ambil total_amount dari invoice
-          const { data: inv } = await supabase
-            .from("invoices")
-            .select("total_amount")
-            .eq("id", item.invoice_id)
-            .maybeSingle();
+        const { data: allInvoices } = await supabase
+          .from("invoices")
+          .select("id, total_amount")
+          .in("id", invoiceIds);
 
-          if (inv) {
-            const syncedRemaining = inv.total_amount - syncedPaid;
-            await supabase
-              .from("invoices")
-              .update({
-                total_paid: syncedPaid,
-                remaining_amount: syncedRemaining,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", item.invoice_id);
+        if (allInvoices && allInvoices.length > 0) {
+          // Aggregate total_paid per invoice di JS
+          const paidByInvoice = new Map<string, number>();
+          for (const item of allInvoiceItems) {
+            const txPayments = (allPayments || []).filter(
+              (p) => p.transaction_id === item.transaction_id
+            );
+            const total = txPayments.reduce((s, p) => s + (p.amount || 0), 0);
+            paidByInvoice.set(
+              item.invoice_id,
+              (paidByInvoice.get(item.invoice_id) || 0) + total
+            );
           }
+
+          // Parallel update semua invoice
+          await Promise.all(
+            allInvoices.map((inv) => {
+              const syncedPaid = paidByInvoice.get(inv.id) || 0;
+              const syncedRemaining = inv.total_amount - syncedPaid;
+              return supabase
+                .from("invoices")
+                .update({
+                  total_paid: syncedPaid,
+                  remaining_amount: syncedRemaining,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", inv.id);
+            })
+          );
         }
       }
     }
+
+    // Invalidate cache
+    revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
 
     const statusMsg = newStatus === "LUNAS" ? " — LUNAS ✅" : "";
 
@@ -911,7 +953,6 @@ export async function createInvoice(data: {
       };
     }
 
-    // Ambil data transaksi yg dipilih
     const { data: txs, error: txErr } = await supabase
       .from("transactions")
       .select("id, final_price, status")
@@ -927,7 +968,6 @@ export async function createInvoice(data: {
 
     const totalAmount = txs.reduce((sum, t) => sum + t.final_price, 0);
 
-    // Hitung total sudah dibayar
     const { data: payments } = await supabase
       .from("transaction_payments")
       .select("amount")
@@ -936,7 +976,6 @@ export async function createInvoice(data: {
     const totalPaid = (payments || []).reduce((sum, p) => sum + p.amount, 0);
     const remaining = totalAmount - totalPaid;
 
-    // Insert invoice
     const { data: invoice, error: invErr } = await supabase
       .from("invoices")
       .insert({
@@ -948,11 +987,11 @@ export async function createInvoice(data: {
         created_by: user.id,
       })
       .select("id, invoice_number")
-      .single();
+      .maybeSingle();
 
     if (invErr) return { success: false, message: invErr.message };
+    if (!invoice) return { success: false, message: "Gagal membuat invoice" };
 
-    // Insert invoice_items
     const items = data.transaction_ids.map((txId) => ({
       invoice_id: invoice.id,
       transaction_id: txId,
@@ -963,6 +1002,8 @@ export async function createInvoice(data: {
       await supabase.from("invoices").delete().eq("id", invoice.id);
       return { success: false, message: `Gagal menambahkan item invoice: ${itemErr.message}` };
     }
+
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
 
     return {
       success: true,
@@ -1104,6 +1145,8 @@ export async function deleteInvoice(id: string): Promise<ActionState> {
     const { error } = await supabase.from("invoices").delete().eq("id", id);
     if (error) return { success: false, message: error.message };
 
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+
     return {
       success: true,
       message: `Invoice ${existing.invoice_number} berhasil dihapus`,
@@ -1123,6 +1166,8 @@ export async function deleteInvoice(id: string): Promise<ActionState> {
 // 🎯 KPI = periode AKTIF saja (hari ini / minggu ini / bulan ini / tahun ini)
 //    Prev = periode SEBELUMNYA (kemarin / minggu lalu / bulan lalu / tahun lalu)
 //    Chart = rentang penuh (30h / 12w / 12m / 5y)
+//
+// 🗂️ Cache: unstable_cache 5 menit, invalidate via revalidateTag("dashboard")
 // ============================================================
 
 export interface DashboardMonthlyData {
@@ -1195,17 +1240,13 @@ async function fetchChartRawData(
     .lte("created_at", fmtDateISO(chartEnd));
 
   const validTxIds = (allTx || []).filter((t) => t.status !== "BATAL").map((t) => t.id);
-  let allHpp: Array<{ amount: number; transaction_id: string }> = [];
-  if (validTxIds.length > 0) {
-    for (let i = 0; i < validTxIds.length; i += 200) {
-      const chunk = validTxIds.slice(i, i + 200);
-      const { data: hppChunk } = await supabase
+  const allHpp = validTxIds.length > 0
+    ? ((await supabase
         .from("hpp_items")
         .select("amount, transaction_id")
-        .in("transaction_id", chunk);
-      if (hppChunk) allHpp = allHpp.concat(hppChunk);
-    }
-  }
+        .in("transaction_id", validTxIds)
+      ).data || [])
+    : [];
 
   const { data: allOpCosts } = await supabase
     .from("operational_costs")
@@ -1298,12 +1339,8 @@ function computePeriodStat(
   return { revenue, hpp, grossProfit, operationalCosts, netProfit, netMargin, txCount };
 }
 
-// ============================================================
-// MAIN: getDashboardStats
-// ============================================================
-export async function getDashboardStats(
-  period: PeriodType = "monthly"
-): Promise<DashboardStats> {
+// ── Core dashboard logic (tanpa Supabase client di wrapper) ──
+async function computeDashboardStats(period: PeriodType): Promise<DashboardStats> {
   const supabase = await createServerSupabaseClient();
   const now = new Date();
 
@@ -1472,3 +1509,10 @@ export async function getDashboardStats(
     })),
   };
 }
+
+// ⚡ Cached wrapper — 5 menit TTL, invalidasi via revalidateTag("dashboard")
+export const getDashboardStats = unstable_cache(
+  computeDashboardStats,
+  ["dashboard-stats"],
+  { revalidate: 300, tags: [CACHE_TAGS.dashboard] }
+);

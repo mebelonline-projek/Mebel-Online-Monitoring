@@ -50,6 +50,7 @@ export default async function NotaPage({
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
       <NotaDocument
+        transaction_id={id}
         transaction_number={(transaction as any).transaction_number}
         customer_name={(transaction as any).customer_name || "—"}
         product_name={(transaction as any).description || "—"}
