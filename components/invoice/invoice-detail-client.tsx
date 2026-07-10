@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-client";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { StoreLogo } from "@/components/shared/store-logo";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -79,7 +80,6 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
   const isOwner = profileRole === "OWNER";
   const [showDelete, setShowDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const logoUrl = storeSettings?.logo_url || "/logo.webp";
 
   const handleDelete = async () => {
     setIsDeleting(true);
@@ -103,7 +103,9 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
   };
 
   const allTransactions =
-    invoice.invoice_items?.map((item) => item.transactions).filter(Boolean) || [];
+    invoice.invoice_items
+      ?.map((item) => item.transactions)
+      .filter((tx): tx is NonNullable<typeof tx> => Boolean(tx)) || [];
   const totalPaid = invoice.total_paid;
 
   return (
@@ -164,17 +166,12 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
           {/* HEADER */}
           <div className="flex flex-row justify-between items-start mb-8 pb-6 border-b-2 border-[#800000]">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0 bg-gray-50 flex items-center justify-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={logoUrl}
-                  alt="Logo"
-                  className="w-full h-full object-contain p-1"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = "/logo.webp";
-                  }}
-                />
-              </div>
+              <StoreLogo
+                src={storeSettings?.logo_url}
+                alt={storeSettings?.store_name || "Logo toko"}
+                size="lg"
+                variant="print"
+              />
               <div>
                 <h2 className="text-xl font-bold text-[#800000]">
                   {storeSettings?.store_name || "Mebel Online Monitoring"}
@@ -212,7 +209,21 @@ export function InvoiceDetailClient({ invoice, profileRole, storeSettings }: Pro
             <h4 className="text-sm font-bold text-[#800000] mb-2 pb-1 border-b border-gray-200">
               Detail Pesanan
             </h4>
-            <div className="overflow-x-auto">
+            <div className="md:hidden space-y-2 mb-4">
+              {allTransactions.map((tx) => (
+                <div key={tx.id} className="p-3 rounded-lg border border-gray-200 bg-gray-50 text-sm">
+                  <p className="font-mono font-bold">{tx.transaction_number}</p>
+                  <div className="flex justify-between mt-1">
+                    <span>{tx.payment_type === "CASH" ? "Cash" : "DP"}</span>
+                    <span className="font-semibold">{formatCurrency(tx.final_price)}</span>
+                  </div>
+                  <div className="mt-1">
+                    <StatusBadge status={tx.status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-[#800000] hover:bg-[#800000] [&>th]:text-white [&>th]:border-white/20">

@@ -6,8 +6,12 @@
 
 import { NextResponse } from "next/server";
 import { createTransaction, updateTransaction, deleteTransactionPermanent } from "@/lib/transactions";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export async function POST(request: Request) {
+  const auth = await requireApiAuth();
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const result = await createTransaction(body);
@@ -29,6 +33,9 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  const auth = await requireApiAuth();
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const { id, ...formData } = body;
@@ -59,6 +66,9 @@ export async function PUT(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const auth = await requireApiAuth();
+  if (auth.error) return auth.error;
+
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");

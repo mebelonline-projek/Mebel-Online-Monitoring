@@ -2,33 +2,42 @@
   "name": "Mebel Online Monitoring",
   "short_name": "MebelMonitor",
   "description": "Aplikasi manajemen keuangan toko furnitur — kelola transaksi, HPP, biaya operasional, dan pantau omzet.",
-  "start_url": "/login",
+  "start_url": "/kasir",
   "display": "standalone",
   "background_color": "#1a1a2e",
   "theme_color": "#800000",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "/icons/icon-192-maskable.png",
+      "src": "/icons/icon-192.svg",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
+      "type": "image/svg+xml"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Transaksi Baru",
+      "short_name": "Baru",
+      "url": "/kasir",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
     },
     {
-      "src": "/icons/icon-512-maskable.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "name": "Daftar Transaksi",
+      "short_name": "Transaksi",
+      "url": "/transaksi",
+      "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }]
     }
   ]
 }

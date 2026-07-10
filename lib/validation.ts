@@ -47,10 +47,24 @@ export type ContactFormValues = z.infer<typeof contactFormSchema>;
 
 // --- Transaction ---
 export const transactionSchema = z.object({
-  customer_name: z.string().max(100, "Nama pelanggan maksimal 100 karakter").optional().or(z.literal("")),
-  description: z.string().max(1000, "Deskripsi maksimal 1000 karakter").optional().or(z.literal("")),
+  customer_id: z.string().uuid().optional().or(z.literal("")),
+  product_id: z.string().uuid().optional().or(z.literal("")),
+  customer_name: z
+    .string()
+    .max(100, "Nama pelanggan maksimal 100 karakter")
+    .optional()
+    .or(z.literal(""))
+    .nullable(),
+  description: z
+    .string()
+    .max(1000, "Deskripsi maksimal 1000 karakter")
+    .optional()
+    .or(z.literal(""))
+    .nullable(),
   final_price: z.coerce.number().min(1, "Harga harus lebih dari 0").max(999_999_999, "Harga terlalu besar"),
   payment_type: z.enum(["CASH", "DP"], { error: "Pilih tipe pembayaran" }),
+  payment_method: z.enum(["TUNAI", "TRANSFER"]).default("TUNAI"),
+  client_id: z.string().uuid().optional(),
   dp_amount: z.coerce.number().min(0, "DP tidak boleh negatif").default(0),
 }).refine(
   (data) => {
@@ -66,6 +80,28 @@ export const transactionSchema = z.object({
 );
 
 export type TransactionFormValues = z.infer<typeof transactionSchema>;
+
+// --- Transaction line item (multi-produk) ---
+export const transactionItemSchema = z.object({
+  product_id: z.string().uuid().optional().or(z.literal("")),
+  product_name: z.string().min(1, "Nama produk wajib").max(200),
+  quantity: z.coerce.number().min(1, "Min 1").max(999),
+  unit_price: z.coerce.number().min(1, "Harga item harus lebih dari 0").max(999_999_999),
+  note: z.string().max(300).optional().or(z.literal("")),
+});
+
+export type TransactionItemFormValues = z.infer<typeof transactionItemSchema>;
+
+export const transactionCreateSchema = transactionSchema.extend({
+  items: z.array(transactionItemSchema).optional(),
+});
+
+export const fulfillmentUpdateSchema = z.object({
+  id: z.string().uuid(),
+  fulfillment_status: z.enum(["MENUNGGU", "PRODUKSI", "SIAP_KIRIM", "SELESAI"]),
+});
+
+export type FulfillmentUpdateValues = z.infer<typeof fulfillmentUpdateSchema>;
 
 // --- HPP Item ---
 export const hppItemSchema = z.object({
@@ -95,3 +131,23 @@ export const operationalCostSchema = z.object({
 });
 
 export type OperationalCostFormValues = z.infer<typeof operationalCostSchema>;
+
+// --- Customer ---
+export const customerSchema = z.object({
+  name: z.string().min(2, "Nama minimal 2 karakter").max(100, "Nama maksimal 100 karakter"),
+  phone: z.string().max(20, "Telepon maksimal 20 karakter").optional().or(z.literal("")),
+  address: z.string().max(300, "Alamat maksimal 300 karakter").optional().or(z.literal("")),
+  note: z.string().max(500, "Catatan maksimal 500 karakter").optional().or(z.literal("")),
+});
+
+export type CustomerFormValues = z.infer<typeof customerSchema>;
+
+// --- Product ---
+export const productSchema = z.object({
+  name: z.string().min(2, "Nama produk minimal 2 karakter").max(200, "Nama maksimal 200 karakter"),
+  category: z.string().max(100, "Kategori maksimal 100 karakter").optional().default("LAINNYA"),
+  description: z.string().max(500, "Deskripsi maksimal 500 karakter").optional().or(z.literal("")),
+  base_price: z.coerce.number().min(0, "Harga tidak boleh negatif").max(999_999_999, "Harga terlalu besar"),
+});
+
+export type ProductFormValues = z.infer<typeof productSchema>;

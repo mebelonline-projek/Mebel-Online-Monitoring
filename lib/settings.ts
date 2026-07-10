@@ -13,6 +13,7 @@ import { createServerSupabaseClient, getCurrentUser, getUserProfile } from "@/li
 import { revalidatePath } from "next/cache";
 import type { ActionState } from "@/types/common";
 import { getStoreSettings, type StoreSettings } from "@/lib/store-queries";
+import { generatePwaIconsFromBuffer } from "@/lib/pwa-icons";
 
 // ============================================================
 // UPDATE — Update data toko (nama, alamat, telepon)
@@ -168,6 +169,20 @@ export async function uploadLogo(
 
     if (updateError) throw new Error(updateError.message);
 
+    const { icon192, icon512 } = await generatePwaIconsFromBuffer(webpBuffer);
+    await Promise.all([
+      supabase.storage.from("logos").upload("pwa/icon-192.png", icon192, {
+        contentType: "image/png",
+        cacheControl: "3600",
+        upsert: true,
+      }),
+      supabase.storage.from("logos").upload("pwa/icon-512.png", icon512, {
+        contentType: "image/png",
+        cacheControl: "3600",
+        upsert: true,
+      }),
+    ]);
+
     revalidatePath("/pengaturan");
     return {
       success: true,
@@ -201,14 +216,16 @@ export async function resetLogo(): Promise<ActionState<null>> {
     const currentSettings = await getStoreSettings();
     const settingsId = currentSettings?.id || "";
 
-    if (currentSettings?.logo_url && !currentSettings.logo_url.includes("logo.webp")) {
+    if (currentSettings?.logo_url && !currentSettings.logo_url.includes("logo.svg")) {
       const oldPath = currentSettings.logo_url.split("/logos/").pop();
       if (oldPath) {
         await supabase.storage.from("logos").remove([oldPath]);
       }
     }
 
-    // Set logo_url ke null (frontend akan fallback ke /logo.webp)
+    await supabase.storage.from("logos").remove(["pwa/icon-192.png", "pwa/icon-512.png"]);
+
+    // Set logo_url ke null (frontend fallback ke /logo.svg)
     const { error: updateError } = await supabase
       .from("store_settings")
       .update({

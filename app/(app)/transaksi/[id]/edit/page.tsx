@@ -4,6 +4,8 @@
 
 import { redirect, notFound } from "next/navigation";
 import { getCurrentUser, getUserProfile, createServerSupabaseClient } from "@/lib/supabase-server";
+import { getCustomersForPicker } from "@/lib/customers";
+import { getProductsForPicker } from "@/lib/products";
 import { TransactionForm } from "@/components/transactions/transaction-form";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +44,11 @@ export default async function EditTransaksiPage({
     redirect(`/transaksi/${id}`);
   }
 
+  const [customers, products] = await Promise.all([
+    getCustomersForPicker(),
+    getProductsForPicker(),
+  ]);
+
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-3xl mx-auto">
       {/* Header */}
@@ -56,7 +63,11 @@ export default async function EditTransaksiPage({
       <TransactionForm
         isEdit
         transactionId={id}
+        customers={customers}
+        products={products}
         initialData={{
+          customer_id: transaction.customer_id || undefined,
+          product_id: transaction.product_id || undefined,
           customer_name: transaction.customer_name || "",
           description: transaction.description || "",
           final_price: transaction.final_price,

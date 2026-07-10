@@ -21,6 +21,14 @@ Font.register({
 // ============================================================
 // Types
 // ============================================================
+export interface InvoiceLineItem {
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  note?: string | null;
+}
+
 export interface InvoiceData {
   invoiceNumber: string;
   createdAt: string;
@@ -41,6 +49,7 @@ export interface InvoiceData {
   productName: string;
   productDescription: string | null;
   description: string | null;
+  lineItems?: InvoiceLineItem[];
 
   // Keuangan
   finalPrice: number;
@@ -293,25 +302,14 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
         </View>
 
         {/* ==================== INFO PRODUK ==================== */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Detail Pesanan</Text>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Produk</Text>
-            <Text style={styles.infoValue}>{data.productName}</Text>
-          </View>
-          {data.productDescription && (
+        {data.description && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Catatan</Text>
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Keterangan</Text>
-              <Text style={styles.infoValue}>{data.productDescription}</Text>
-            </View>
-          )}
-          {data.description && (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Catatan</Text>
               <Text style={styles.infoValue}>{data.description}</Text>
             </View>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* ==================== RINCIAN PEMBAYARAN ==================== */}
         <View style={styles.table}>
@@ -321,12 +319,28 @@ export function InvoiceDocument({ data }: { data: InvoiceData }) {
             <Text style={styles.tableHeaderPrice}>Harga</Text>
             <Text style={styles.tableHeaderTotal}>Subtotal</Text>
           </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.tableCell}>{data.productName}</Text>
-            <Text style={styles.tableCellQty}>1</Text>
-            <Text style={styles.tableCellPrice}>{fmt(data.finalPrice)}</Text>
-            <Text style={styles.tableCellTotal}>{fmt(data.finalPrice)}</Text>
-          </View>
+          {(data.lineItems && data.lineItems.length > 0
+            ? data.lineItems
+            : [
+                {
+                  product_name: data.productName,
+                  quantity: 1,
+                  unit_price: data.finalPrice,
+                  line_total: data.finalPrice,
+                  note: null,
+                },
+              ]
+          ).map((item, index) => (
+            <View key={index} style={styles.tableRow}>
+              <Text style={styles.tableCell}>
+                {item.product_name}
+                {item.note ? `\n${item.note}` : ""}
+              </Text>
+              <Text style={styles.tableCellQty}>{item.quantity}</Text>
+              <Text style={styles.tableCellPrice}>{fmt(item.unit_price)}</Text>
+              <Text style={styles.tableCellTotal}>{fmt(item.line_total)}</Text>
+            </View>
+          ))}
         </View>
 
         {/* ==================== RINGKASAN ==================== */}

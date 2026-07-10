@@ -1,12 +1,15 @@
+import withSerwistInit from "@serwist/next";
 import type { NextConfig } from "next";
+
+const withSerwist = withSerwistInit({
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
+  disable: process.env.NODE_ENV === "development",
+});
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
-  // 🚀 Optimasi bundle: exclude library besar dari client bundle
-  // ⚡ Router Cache: halaman dynamic di-cache 30 detik di client
-  //    → navigasi bolak-balik antar menu INSTANT dari cache
-  //    → setelah 30 detik, background revalidate otomatis
   experimental: {
     optimizePackageImports: [
       "lucide-react",
@@ -14,12 +17,11 @@ const nextConfig: NextConfig = {
       "framer-motion",
     ],
     staleTimes: {
-      dynamic: 30,
+      dynamic: 120,
       static: 300,
     },
   },
 
-  // Konfigurasi header keamanan
   async headers() {
     return [
       {
@@ -47,4 +49,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSerwist(nextConfig);

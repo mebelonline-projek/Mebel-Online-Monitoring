@@ -1,9 +1,10 @@
-﻿import type { Metadata } from "next";
+﻿import type { Metadata, Viewport } from "next";
 import { Playfair_Display, Inter } from "next/font/google";
 import Script from "next/script";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { ThemeProvider } from "@/providers/theme-provider";
+import { ServiceWorkerProvider } from "@/providers/service-worker-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { siteConfig } from "@/config/site";
@@ -21,6 +22,13 @@ const inter = Inter({
   weight: ["300", "400", "500", "600", "700"],
 });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  viewportFit: "cover",
+};
+
 export const metadata: Metadata = {
   title: {
     default: seoConfig.defaultTitle,
@@ -30,9 +38,13 @@ export const metadata: Metadata = {
   openGraph: seoConfig.openGraph,
   twitter: seoConfig.twitter,
   metadataBase: new URL(siteConfig.url),
-  manifest: "/manifest.json",
   icons: {
-    icon: [{ url: "/icons/icon-192.svg", type: "image/svg+xml" }],
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/icon-192.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
   },
   other: {
     "mobile-web-app-capable": "yes",
@@ -56,11 +68,13 @@ export default function RootLayout({
           {`!function(){try{var t=localStorage.getItem("theme")||"system";if("system"===t){var m=window.matchMedia("(prefers-color-scheme: dark)");m.matches&&document.documentElement.classList.add("dark")}else"dark"===t&&document.documentElement.classList.add("dark")}catch(e){}}()`}
         </Script>
         <ThemeProvider>
-          <TooltipProvider>
-            {children}
-            <Analytics />
-            <Toaster />
-          </TooltipProvider>
+          <ServiceWorkerProvider>
+            <TooltipProvider>
+              {children}
+              <Analytics />
+              <Toaster />
+            </TooltipProvider>
+          </ServiceWorkerProvider>
         </ThemeProvider>
       </body>
     </html>

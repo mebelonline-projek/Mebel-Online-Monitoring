@@ -6,7 +6,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase-client";
 import { formatCurrency } from "@/lib/formatters";
 import { hppItemSchema } from "@/lib/validation";
 import { toast } from "sonner";
@@ -58,7 +57,6 @@ export function HppManagerClient({
   hppItems: initialItems,
 }: Props) {
   const router = useRouter();
-  const supabase = createClient();
   const isBatal = transactionStatus === "BATAL";
 
   const [items, setItems] = useState<HppItem[]>(initialItems);
@@ -113,16 +111,15 @@ export function HppManagerClient({
     setIsSubmitting(true);
     try {
       if (editingId) {
-        const { error } = await supabase
-          .from("hpp_items")
-          .update({
-            name: parsed.data.name,
-            amount: parsed.data.amount,
-            note: parsed.data.note || null,
-          })
-          .eq("id", editingId);
-
-        if (error) throw error;
+        const response = await fetch(`/api/hpp-items/${editingId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || "Gagal mengupdate HPP");
+        }
 
         setItems((prev) =>
           prev.map((item) =>
@@ -131,7 +128,7 @@ export function HppManagerClient({
               : item
           )
         );
-        toast.success(`Item HPP "${parsed.data.name}" berhasil diupdate`);
+        toast.success(result.message);
       } else {
         const response = await fetch("/api/hpp-items", {
           method: "POST",
@@ -144,18 +141,8 @@ export function HppManagerClient({
           throw new Error(result.message || "Gagal menambah HPP");
         }
 
-        // Gunakan data item lengkap dari API response — tanpa refetch dari client
         if (result.data) {
           setItems((prev) => [...prev, result.data]);
-        } else {
-          // Fallback: refetch jika response tidak mengandung data
-          const { data: freshItems } = await supabase
-            .from("hpp_items")
-            .select("*")
-            .eq("transaction_id", transactionId)
-            .order("created_at", { ascending: true });
-
-          if (freshItems) setItems(freshItems);
         }
         toast.success(result.message);
       }
@@ -170,11 +157,16 @@ export function HppManagerClient({
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const { error } = await supabase.from("hpp_items").delete().eq("id", deleteTarget.id);
-      if (error) throw error;
+      const response = await fetch(`/api/hpp-items/${deleteTarget.id}`, {
+        method: "DELETE",
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Gagal menghapus HPP");
+      }
 
       setItems((prev) => prev.filter((item) => item.id !== deleteTarget.id));
-      toast.success(`Item HPP "${deleteTarget.name}" berhasil dihapus`);
+      toast.success(result.message);
       setDeleteTarget(null);
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Gagal menghapus HPP");
@@ -295,7 +287,35 @@ export function HppManagerClient({
           </CardContent>
         </Card>
       ) : (
-        <Card className="shadow-sm overflow-hidden">
+        <>
+          <div className="md:hidden space-y-3">
+            {items.map((item) => (
+              <Card key={item.id} className="shadow-sm">
+                <CardContent className="p-4 space-y-2">
+                  <p className="font-semibold">{item.name}</p>
+                  <p className="text-lg font-bold">{formatCurrency(item.amount)}</p>
+                  {item.note && <p className="text-xs text-muted-foreground">{item.note}</p>}
+                  {!isBatal && (
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" variant="outline" onClick={() => startEdit(item)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive"
+                        onClick={() => setDeleteTarget(item)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="shadow-sm overflow-hidden hidden md:block">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -350,6 +370,7 @@ export function HppManagerClient({
             <span className="text-xl font-bold text-primary">{formatCurrency(totalHpp)}</span>
           </div>
         </Card>
+        </>
       )}
 
       {/* Delete Alert */}

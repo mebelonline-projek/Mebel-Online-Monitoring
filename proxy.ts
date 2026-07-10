@@ -1,18 +1,15 @@
 // ============================================================
-// 🛡️ MIDDLEWARE — Versi Ringan
+// 🛡️ PROXY — Versi Ringan (Next.js 16)
 // ============================================================
 // HANYA cek cookie session — tidak panggil API Supabase.
-// Auth verifikasi dilakukan di client-side layout.
-// Hemat RAM & lebih cepat.
+// Auth verifikasi dilakukan di server layout.
 // ============================================================
 
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
-
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Skip file statis
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
@@ -22,7 +19,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Halaman publik — bebas akses
   if (
     pathname === "/login" ||
     pathname === "/register" ||
@@ -31,7 +27,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3. Cek apakah ada cookie Supabase session
   const allCookies = request.cookies.getAll();
   const hasSessionCookie = allCookies.some((c) => c.name.startsWith("sb-"));
 

@@ -12,6 +12,8 @@ import type { StoreSettings } from "@/lib/store-queries";
 import { Button } from "@/components/ui/button";
 import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase-client";
+import { StoreLogo } from "@/components/shared/store-logo";
+import { useStore } from "@/components/providers/store-context";
 
 interface Props {
   settings: StoreSettings | null;
@@ -20,23 +22,20 @@ interface Props {
 
 export function SettingsClient({ settings, profileRole }: Props) {
   const router = useRouter();
+  const { setStoreLogo, setStoreName, refreshStore } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isOwner = profileRole === "OWNER";
 
-  const [storeName, setStoreName] = useState(settings?.store_name || "");
+  const [storeName, setStoreNameLocal] = useState(settings?.store_name || "");
   const [address, setAddress] = useState(settings?.address || "");
   const [phone, setPhone] = useState(settings?.phone || "");
+  const [logoUrl, setLogoUrl] = useState<string | null>(settings?.logo_url ?? null);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
 
-  const logoUrl = settings?.logo_url || "/logo.webp";
-
-  // ============================================================
-  // SAVE — Simpan info toko
-  // ============================================================
   const handleSave = async () => {
     if (!storeName || storeName.trim().length < 3) {
       toast.error("Nama toko minimal 3 karakter");
@@ -57,6 +56,7 @@ export function SettingsClient({ settings, profileRole }: Props) {
 
       if (result.success) {
         toast.success(result.message || "Pengaturan toko berhasil disimpan");
+        setStoreName(storeName.trim());
         router.refresh();
       } else {
         toast.error(result.message || "Gagal menyimpan pengaturan");
@@ -96,12 +96,15 @@ export function SettingsClient({ settings, profileRole }: Props) {
       formData.append("logo", file);
 
       const result = await uploadLogo(
-        { success: true, data: { logo_url: logoUrl } },
+        { success: true, data: { logo_url: logoUrl || "" } },
         formData,
       );
 
-      if (result.success) {
+      if (result.success && result.data?.logo_url) {
         toast.success("Logo berhasil diupload");
+        setLogoUrl(result.data.logo_url);
+        setStoreLogo(result.data.logo_url);
+        await refreshStore();
         router.refresh();
       } else {
         toast.error(result.message || "Gagal upload logo");
@@ -124,6 +127,9 @@ export function SettingsClient({ settings, profileRole }: Props) {
       if (result.success) {
         toast.success("Logo berhasil direset ke default");
         setResetDialogOpen(false);
+        setLogoUrl(null);
+        setStoreLogo(null);
+        await refreshStore();
         router.refresh();
       } else {
         toast.error(result.message || "Gagal mereset logo");
@@ -159,18 +165,7 @@ export function SettingsClient({ settings, profileRole }: Props) {
 
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
           {/* Logo Preview */}
-          <div className="w-32 h-32 rounded-xl border-2 border-border overflow-hidden bg-accent/20 flex items-center justify-center flex-shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={logoUrl}
-              alt="Logo Toko"
-              className="w-full h-full object-contain p-2"
-              onError={(e) => {
-                // Fallback jika gambar gagal load
-                (e.target as HTMLImageElement).src = "/logo.webp";
-              }}
-            />
-          </div>
+          <StoreLogo src={logoUrl} alt="Logo Toko" size="xl" />
 
           <div className="space-y-3 flex-1">
             {/* Upload Button */}
@@ -214,7 +209,7 @@ export function SettingsClient({ settings, profileRole }: Props) {
             </p>
 
             {/* Reset Button */}
-            {isOwner && logoUrl !== "/logo.webp" && (
+            {isOwner && logoUrl && (
               <button
                 onClick={() => setResetDialogOpen(true)}
                 className="text-xs text-destructive hover:underline cursor-pointer"
@@ -241,7 +236,7 @@ export function SettingsClient({ settings, profileRole }: Props) {
             <input
               type="text"
               value={storeName}
-              onChange={(e) => setStoreName(e.target.value)}
+              onChange={(e) => setStoreNameLocal(e.target.value)}
               className="dark-input w-full"
               placeholder="Nama toko Anda"
               disabled={!isOwner}

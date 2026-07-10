@@ -65,8 +65,17 @@ interface Props {
   currentPage: number;
   totalPages: number;
   bulan: string;
+  dari: string;
+  sampai: string;
   profileRole: string;
   distinctCategories: string[];
+  onMutated?: () => void;
+  clientNav?: {
+    onBulanChange: (bulan: string) => void;
+    onCustomRange: (dari: string, sampai: string) => void;
+    onClearCustomRange: (bulan: string) => void;
+    onPageChange: (page: number) => void;
+  };
 }
 
 type CostForm = {
@@ -81,8 +90,12 @@ export function OperationalCostListClient({
   currentPage,
   totalPages,
   bulan,
+  dari: initialDari,
+  sampai: initialSampai,
   profileRole,
   distinctCategories,
+  onMutated,
+  clientNav,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -95,12 +108,47 @@ export function OperationalCostListClient({
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [customDari, setCustomDari] = useState(initialDari);
+  const [customSampai, setCustomSampai] = useState(initialSampai);
 
   const isOwner = profileRole === "OWNER";
 
   const handleBulanChange = (value: string) => {
-    const params = new URLSearchParams(searchParams.toString());
+    if (clientNav) {
+      clientNav.onBulanChange(value);
+      return;
+    }
+    const params = new URLSearchParams();
     params.set("bulan", value);
+    params.set("page", "1");
+    router.push(`/operasional?${params.toString()}`);
+  };
+
+  const applyCustomRange = () => {
+    if (!customDari || !customSampai) {
+      toast.error("Isi tanggal dari dan sampai");
+      return;
+    }
+    if (clientNav) {
+      clientNav.onCustomRange(customDari, customSampai);
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("dari", customDari);
+    params.set("sampai", customSampai);
+    params.set("page", "1");
+    router.push(`/operasional?${params.toString()}`);
+  };
+
+  const clearCustomRange = () => {
+    setCustomDari("");
+    setCustomSampai("");
+    if (clientNav) {
+      clientNav.onClearCustomRange(bulan);
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("bulan", bulan);
     params.set("page", "1");
     router.push(`/operasional?${params.toString()}`);
   };
@@ -163,7 +211,8 @@ export function OperationalCostListClient({
           toast.success(result.message);
           setDialogOpen(false);
           resetForm();
-          router.refresh();
+          if (onMutated) onMutated();
+          else router.refresh();
         }
       } else {
         const result = await createOperationalCost(payload);
@@ -173,7 +222,8 @@ export function OperationalCostListClient({
           toast.success(result.message);
           setDialogOpen(false);
           resetForm();
-          router.refresh();
+          if (onMutated) onMutated();
+          else router.refresh();
         }
       }
     } catch (error: unknown) {
@@ -194,7 +244,8 @@ export function OperationalCostListClient({
         toast.success(result.message);
         setDeleteDialogOpen(false);
         setDeletingCost(null);
-        router.refresh();
+        if (onMutated) onMutated();
+        else router.refresh();
       }
     } catch {
       toast.error("Terjadi kesalahan saat menghapus");
@@ -204,13 +255,20 @@ export function OperationalCostListClient({
   };
 
   const goToPage = (page: number) => {
+    if (clientNav) {
+      clientNav.onPageChange(page);
+      return;
+    }
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", page.toString());
     router.push(`/operasional?${params.toString()}`);
   };
 
   const totalCost = initialCosts.reduce((sum, c) => sum + c.amount, 0);
-  const currentMonthLabel = MONTH_OPTIONS.find((o) => o.value === bulan)?.label || bulan;
+  const periodLabel =
+    initialDari && initialSampai
+      ? `${initialDari} s/d ${initialSampai}`
+      : MONTH_OPTIONS.find((o) => o.value === bulan)?.label || bulan;
 
   return (
     <div className="space-y-6">
@@ -226,20 +284,41 @@ export function OperationalCostListClient({
         </Button>
       </div>
 
-      {/* Dropdown Bulan */}
-      <div className="flex items-center gap-3">
-        <label className="text-sm font-medium text-muted-foreground">Bulan:</label>
-        <select
-          value={bulan}
-          onChange={(e) => handleBulanChange(e.target.value)}
-          className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          {MONTH_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+      {/* Filter periode */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <label className="text-sm font-medium text-muted-foreground shrink-0">Bulan:</label>
+          <select
+            value={bulan}
+            onChange={(e) => handleBulanChange(e.target.value)}
+            disabled={Boolean(initialDari && initialSampai)}
+            className="flex h-10 w-full sm:w-auto rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            {MONTH_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+          <div className="flex-1 space-y-1">
+            <label className="text-xs text-muted-foreground">Dari tanggal</label>
+            <Input type="date" value={customDari} onChange={(e) => setCustomDari(e.target.value)} />
+          </div>
+          <div className="flex-1 space-y-1">
+            <label className="text-xs text-muted-foreground">Sampai tanggal</label>
+            <Input type="date" value={customSampai} onChange={(e) => setCustomSampai(e.target.value)} />
+          </div>
+          <Button type="button" variant="secondary" onClick={applyCustomRange} className="min-h-[40px]">
+            Terapkan
+          </Button>
+          {(initialDari || initialSampai) && (
+            <Button type="button" variant="outline" onClick={clearCustomRange} className="min-h-[40px]">
+              Reset
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Content */}
@@ -250,7 +329,7 @@ export function OperationalCostListClient({
               <Wallet className="w-8 h-8 text-muted-foreground" />
             </div>
             <h3 className="text-lg font-semibold mb-1">
-              Belum Ada Biaya {currentMonthLabel}
+              Belum Ada Biaya {periodLabel}
             </h3>
             <p className="text-muted-foreground text-sm max-w-sm">
               Belum ada catatan pengeluaran untuk bulan ini.
@@ -267,13 +346,50 @@ export function OperationalCostListClient({
           <Card className="shadow-sm bg-primary/5 border-primary/10">
             <CardContent className="p-4 flex items-center justify-between">
               <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                Total Biaya {currentMonthLabel}
+                Total Biaya {periodLabel}
               </p>
               <p className="text-2xl font-bold">{formatCurrency(totalCost)}</p>
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm overflow-hidden">
+          <div className="md:hidden space-y-3">
+            {initialCosts.map((cost) => (
+              <Card key={cost.id} className="shadow-sm">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {cost.category || "LAINNYA"}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{formatDate(cost.created_at)}</span>
+                  </div>
+                  <p className="font-semibold">{cost.name}</p>
+                  <p className="text-lg font-bold">{formatCurrency(cost.amount)}</p>
+                  {isOwner && (
+                    <div className="flex gap-2 pt-1">
+                      <Button variant="outline" size="sm" onClick={() => openEditModal(cost)}>
+                        <Pencil className="w-3.5 h-3.5 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive"
+                        onClick={() => {
+                          setDeletingCost(cost);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1" />
+                        Hapus
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="shadow-sm overflow-hidden hidden md:block">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>

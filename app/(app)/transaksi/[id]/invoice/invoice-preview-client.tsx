@@ -5,8 +5,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { cacheNotaHtml, getCachedNotaHtml } from "@/lib/nota-cache";
+import { mapTransactionLineItems } from "@/lib/pdf-invoice";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { StoreLogo } from "@/components/shared/store-logo";
 
 interface TransactionData {
   id: string;
@@ -18,6 +22,14 @@ interface TransactionData {
   dp_amount: number;
   status: string;
   created_at: string;
+  transaction_items?: Array<{
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    line_total: number;
+    note: string | null;
+    sort_order: number;
+  }>;
   transaction_payments: Array<{ id: string; amount: number; payment_date: string; method: string; note: string | null }>;
 }
 
@@ -36,10 +48,31 @@ interface Props {
 
 export function InvoicePreviewClient({ transaction, settings, profileRole }: Props) {
   const router = useRouter();
+  const notaRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (notaRef.current) {
+      cacheNotaHtml(transaction.id, notaRef.current.innerHTML);
+    }
+  }, [transaction]);
+
+  useEffect(() => {
+    if (!navigator.onLine) {
+      getCachedNotaHtml(transaction.id).then((html) => {
+        if (html && notaRef.current) {
+          notaRef.current.innerHTML = html;
+        }
+      });
+    }
+  }, [transaction.id]);
 
   const totalPaid = transaction.transaction_payments.reduce((sum, p) => sum + p.amount, 0);
   const remainingAmount = transaction.final_price - totalPaid;
-  const logoUrl = settings?.logo_url || "/logo.webp";
+  const lineItems = mapTransactionLineItems(transaction.transaction_items, {
+    description: transaction.description,
+    final_price: transaction.final_price,
+  });
+  const itemsSubtotal = lineItems.reduce((sum, item) => sum + item.line_total, 0);
 
   // ============================================================
   // Download PDF
@@ -83,22 +116,16 @@ export function InvoicePreviewClient({ transaction, settings, profileRole }: Pro
       {/* ==================== PREVIEW CARD ==================== */}
       <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
         {/* Inner white card simulates paper */}
-        <div className="bg-white text-black p-8 md:p-12 lg:p-16">
+        <div ref={notaRef} className="bg-white text-black p-8 md:p-12 lg:p-16">
           {/* HEADER */}
           <div className="flex flex-row justify-between items-start mb-8 pb-6 border-b-2 border-[#800000]">
             <div className="flex items-center gap-4">
-              {/* Logo */}
-              <div className="w-16 h-16 rounded-lg overflow-hidden border border-gray-200 flex-shrink-0 bg-gray-50 flex items-center justify-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={logoUrl}
-                  alt="Logo"
-                  className="w-full h-full object-contain p-1"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = "/logo.webp";
-                  }}
-                />
-              </div>
+              <StoreLogo
+                src={settings?.logo_url}
+                alt={settings?.store_name || "Logo toko"}
+                size="lg"
+                variant="print"
+              />
               <div>
                 <h2 className="text-xl font-bold text-[#800000]">
                   {settings?.store_name || "Mebel Online Monitoring"}
@@ -138,39 +165,42 @@ export function InvoicePreviewClient({ transaction, settings, profileRole }: Pro
           {/* DETAIL PESANAN */}
           <div className="mb-6">
             <h4 className="text-sm font-bold text-[#800000] mb-2 pb-1 border-b border-gray-200">
-              Detail Pesanan
+              Rincian Produk
             </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-sm">
-              {transaction.description && (
-                <div className="flex md:col-span-2">
-                  <span className="text-gray-500 w-20">Deskripsi</span>
-                  <span>{transaction.description}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* TABLE */}
-          <div className="mb-6">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[#800000] text-white">
-                  <th className="text-left p-2 font-medium">Keterangan</th>
-                  <th className="text-center p-2 font-medium">Qty</th>
-                  <th className="text-right p-2 font-medium">Harga</th>
-                  <th className="text-right p-2 font-medium">Subtotal</th>
+                  <th className="text-left p-2 font-medium">Produk</th>
+                  <th className="text-center p-2 font-medium w-16">Qty</th>
+                  <th className="text-right p-2 font-medium w-28">Harga</th>
+                  <th className="text-right p-2 font-medium w-28">Subtotal</th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-gray-200">
-                  <td className="p-2">{transaction.description || "—"}</td>
-                  <td className="text-center p-2">1</td>
-                  <td className="text-right p-2">{formatCurrency(transaction.final_price)}</td>
-                  <td className="text-right p-2 font-medium">
-                    {formatCurrency(transaction.final_price)}
+                {lineItems.map((item, index) => (
+                  <tr key={`${item.product_name}-${index}`} className="border-b border-gray-200 align-top">
+                    <td className="p-2">
+                      <span className="font-medium">{item.product_name}</span>
+                      {item.note && (
+                        <span className="block text-xs text-gray-400 mt-0.5">{item.note}</span>
+                      )}
+                    </td>
+                    <td className="text-center p-2">{item.quantity}</td>
+                    <td className="text-right p-2">{formatCurrency(item.unit_price)}</td>
+                    <td className="text-right p-2 font-medium">{formatCurrency(item.line_total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-gray-300">
+                  <td colSpan={3} className="p-2 text-right font-semibold text-gray-600">
+                    Total ({lineItems.length} item)
+                  </td>
+                  <td className="p-2 text-right font-bold">
+                    {formatCurrency(itemsSubtotal || transaction.final_price)}
                   </td>
                 </tr>
-              </tbody>
+              </tfoot>
             </table>
           </div>
 

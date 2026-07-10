@@ -158,7 +158,40 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
           </CardContent>
         </Card>
       ) : (
-        <Card className="shadow-sm overflow-hidden">
+        <>
+          <div className="md:hidden space-y-3">
+            {initialUsers.map((user) => (
+              <Card key={user.id} className="shadow-sm">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold">{user.name}</p>
+                    {user.id === currentUserId && (
+                      <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">Anda</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground break-all">{user.email}</p>
+                  <p className="text-sm">{user.role === "OWNER" ? "Owner" : "Karyawan"}</p>
+                  {user.id !== currentUserId && user.role !== "OWNER" && (
+                    <div className="flex gap-2 pt-1">
+                      <Button size="sm" variant="outline" onClick={() => openEditModal(user)}>
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive"
+                        onClick={() => { setDeletingUser(user); setDeleteDialogOpen(true); }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="shadow-sm overflow-hidden hidden md:block">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -226,6 +259,7 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
             </Table>
           </div>
         </Card>
+        </>
       )}
 
       {/* Add/Edit Dialog */}

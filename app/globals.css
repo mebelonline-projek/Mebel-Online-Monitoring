@@ -397,3 +397,29 @@
 .data-table tbody tr:hover {
   background: color-mix(in srgb, var(--primary) 5%, transparent);
 }
+
+/* Safe area untuk notched phones (bottom nav, FAB) */
+html,
+body {
+  overflow-x: hidden;
+}
+
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.pb-safe {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.fab-bottom {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

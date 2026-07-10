@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase-client";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { LogOut, LayoutDashboard, Receipt, Wrench, Settings, Sun, Moon, FileText } from "lucide-react";
+import { LogOut, LayoutDashboard, Receipt, Wrench, Settings, Sun, Moon, FileText, Wallet, Users, Package } from "lucide-react";
 import { useTheme } from "@/providers/theme-provider";
 import { useEffect, useState } from "react";
+import { shouldPrefetchNav } from "@/lib/nav-prefetch";
+import { StoreLogo } from "@/components/shared/store-logo";
+import { useStore } from "@/components/providers/store-context";
 
 interface UserProfile {
   id: string;
@@ -24,9 +26,13 @@ const getDashboardHref = (role: string) => {
 };
 
 export function AppSidebar({ profile }: { profile: UserProfile }) {
+  const { store } = useStore();
   const allNavItems = [
     { label: "Dashboard", href: getDashboardHref(profile.role), icon: LayoutDashboard },
     { label: "Transaksi", href: "/transaksi", icon: Receipt },
+    { label: "Pelanggan", href: "/customer", icon: Users },
+    { label: "Produk", href: "/produk", icon: Package },
+    { label: "Piutang", href: "/piutang", icon: Wallet, ownerOnly: true },
     { label: "Invoice", href: "/invoice", icon: FileText },
     { label: "Biaya", href: "/operasional", icon: Wrench },
     { label: "Setelan", href: "/pengaturan", icon: Settings, ownerOnly: true },
@@ -36,11 +42,9 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
     return true;
   });
   const pathname = usePathname();
-  const router = useRouter();
   const supabase = createClient();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [imgError, setImgError] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -49,37 +53,27 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
     window.location.href = "/login";
   };
 
+  const brandName = store.store_name || "Mebel Online";
+
   return (
     <aside className="hidden lg:flex h-screen w-64 flex-col fixed left-0 top-0 z-50 py-6 bg-sidebar border-r border-sidebar-border">
-      {/* Logo + Brand — centered */}
       <div className="px-6 mb-10 flex flex-col items-center text-center">
-        {!imgError && (
-          <div className="w-14 h-14 rounded-xl overflow-hidden bg-sidebar-accent/30 flex items-center justify-center mb-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.webp"
-              alt="Logo"
-              className="w-full h-full object-contain p-1"
-              onError={() => setImgError(true)}
-            />
-          </div>
-        )}
+        <StoreLogo src={store.logo_url} alt={brandName} size="md" className="mb-3" />
         <h1 className="text-xl font-bold tracking-tight" style={{ color: "var(--sidebar-primary)" }}>
-          Mebel Online
+          {brandName}
         </h1>
         <p className="text-[10px] uppercase tracking-widest mt-1" style={{ color: "var(--muted-foreground)" }}>
           Monitoring
         </p>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-grow space-y-1">
         {navItems.map((item) => {
           const isActive = pathname.startsWith(item.href);
           const Icon = item.icon;
 
           return (
-            <Link key={item.href} href={item.href} prefetch={true}>
+            <Link key={item.href} href={item.href} prefetch={shouldPrefetchNav(item.href)}>
               <div
                 className={`flex items-center gap-3 px-6 py-3 transition-all duration-300 group ${
                   isActive
@@ -95,7 +89,6 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
         })}
       </nav>
 
-      {/* Theme Toggle */}
       <div className="px-6 py-3">
         {mounted && (
           <Button
@@ -118,21 +111,9 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
         )}
       </div>
 
-      {/* Profile + Logo kecil + Logout */}
       <div className="px-6 pt-6 mt-auto border-t border-sidebar-border/50 flex flex-col gap-3">
         <div className="flex items-center gap-3">
-          {/* Logo kecil di kiri bawah */}
-          <div className="w-10 h-10 rounded-full border border-primary/40 overflow-hidden flex-shrink-0 bg-sidebar-accent/30 flex items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.webp"
-              alt="Logo"
-              className="w-full h-full object-contain p-0.5"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          </div>
+          <StoreLogo src={store.logo_url} alt={brandName} size="sm" />
           <div className="min-w-0">
             <p className="text-sm font-bold truncate text-sidebar-foreground">{profile.name}</p>
             <p className="text-[10px] text-muted-foreground">

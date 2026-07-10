@@ -11,6 +11,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { FulfillmentBadge } from "@/components/shared/fulfillment-badge";
+import { FULFILLMENT_STATUSES } from "@/config/fulfillment";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -49,6 +51,7 @@ import {
   DollarSign,
   Plus,
   Package,
+  MessageCircle,
   AlertTriangle,
 } from "lucide-react";
 
@@ -67,8 +70,17 @@ interface TransactionDetail {
   created_at: string;
   updated_at: string;
   void_at: string | null;
+  fulfillment_status?: string;
   hpp_items: Array<{ id: string; name: string; amount: number; note: string | null }>;
   transaction_payments: Array<{ id: string; amount: number; payment_date: string; method: string; note: string | null }>;
+  transaction_items?: Array<{
+    id: string;
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    line_total: number;
+    note: string | null;
+  }>;
 }
 
 interface Props {
@@ -111,6 +123,10 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [fulfillmentStatus, setFulfillmentStatus] = useState(
+    transaction.fulfillment_status || "MENUNGGU"
+  );
+  const [isUpdatingFulfillment, setIsUpdatingFulfillment] = useState(false);
 
   const canEdit = displayTransaction.status === "DP";
   const canVoid = isOwner && displayTransaction.status !== "BATAL";
@@ -120,6 +136,36 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
   const remainingAmount = displayTransaction.final_price - totalPaid;
   const totalHpp = displayTransaction.hpp_items.reduce((sum, item) => sum + item.amount, 0);
   const estimatedProfit = displayTransaction.final_price - totalHpp;
+
+  const handleWhatsAppReminder = () => {
+    const customer = displayTransaction.customer_name || "Pelanggan";
+    const text = encodeURIComponent(
+      `Halo ${customer}, reminder tagihan ${displayTransaction.transaction_number} sebesar ${formatCurrency(remainingAmount > 0 ? remainingAmount : displayTransaction.final_price)}. Terima kasih.`
+    );
+    window.open(`https://wa.me/?text=${text}`, "_blank", "noopener,noreferrer");
+  };
+
+  const handleFulfillmentChange = async (status: string) => {
+    setIsUpdatingFulfillment(true);
+    try {
+      const response = await fetch("/api/transactions/fulfillment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: displayTransaction.id, fulfillment_status: status }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Gagal memperbarui status");
+      }
+      setFulfillmentStatus(status);
+      toast.success(result.message);
+      router.refresh();
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
+    } finally {
+      setIsUpdatingFulfillment(false);
+    }
+  };
 
   const handleVoid = async () => {
     if (!voidReason || voidReason.trim().length < 3) {
@@ -184,13 +230,14 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
               {displayTransaction.transaction_number}
             </h1>
             <StatusBadge status={displayTransaction.status} />
+            <FulfillmentBadge status={fulfillmentStatus} />
           </div>
           <p className="text-muted-foreground text-sm">
             Dibuat {formatDate(displayTransaction.created_at)}
           </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => router.back()} className="gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+          <Button variant="outline" onClick={() => router.back()} className="gap-2 min-h-[44px] col-span-2 sm:col-span-1">
             <ArrowLeft className="w-4 h-4" />
             Kembali
           </Button>
@@ -198,7 +245,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
             <Button
               variant="outline"
               onClick={() => router.push(`/transaksi/${displayTransaction.id}/edit`)}
-              className="gap-2"
+              className="gap-2 min-h-[44px]"
             >
               <Pencil className="w-4 h-4" />
               Edit
@@ -207,7 +254,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           {canVoid && (
             <Button
               variant="outline"
-              className="text-destructive border-destructive/30 hover:bg-destructive/10 gap-2"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10 gap-2 min-h-[44px]"
               onClick={() => setVoidDialogOpen(true)}
             >
               <Ban className="w-4 h-4" />
@@ -217,7 +264,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           {canDelete && (
             <Button
               variant="outline"
-              className="text-destructive border-destructive/30 hover:bg-destructive/10 gap-2"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10 gap-2 min-h-[44px]"
               onClick={() => setDeleteDialogOpen(true)}
             >
               <Trash2 className="w-4 h-4" />
@@ -227,7 +274,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           <Button
             variant="secondary"
             onClick={() => router.push(`/transaksi/${displayTransaction.id}/invoice`)}
-            className="gap-2"
+            className="gap-2 min-h-[44px]"
           >
             <FileText className="w-4 h-4" />
             Nota
@@ -235,10 +282,20 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
           {canAddPayment && (
             <Button
               onClick={() => router.push(`/transaksi/${displayTransaction.id}/pelunasan`)}
-              className="gap-2"
+              className="gap-2 min-h-[44px] col-span-2 sm:col-span-1"
             >
               <DollarSign className="w-4 h-4" />
               Input Pelunasan
+            </Button>
+          )}
+          {remainingAmount > 0 && displayTransaction.status !== "BATAL" && (
+            <Button
+              variant="outline"
+              onClick={handleWhatsAppReminder}
+              className="gap-2 min-h-[44px] col-span-2 sm:col-span-1 border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
+            >
+              <MessageCircle className="w-4 h-4" />
+              WhatsApp
             </Button>
           )}
         </div>
@@ -285,6 +342,53 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
             </CardContent>
           </Card>
 
+          {displayTransaction.status !== "BATAL" && (
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
+                <h3 className="text-lg font-bold mb-4">Status Pesanan</h3>
+                <div className="flex flex-wrap gap-2">
+                  {FULFILLMENT_STATUSES.map((opt) => (
+                    <Button
+                      key={opt.value}
+                      type="button"
+                      size="sm"
+                      variant={fulfillmentStatus === opt.value ? "default" : "outline"}
+                      disabled={isUpdatingFulfillment}
+                      onClick={() => handleFulfillmentChange(opt.value)}
+                      className="min-h-[40px]"
+                    >
+                      {opt.label}
+                    </Button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {(displayTransaction.transaction_items?.length ?? 0) > 0 && (
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
+                <h3 className="text-lg font-bold mb-4">Item Pesanan</h3>
+                <div className="space-y-2">
+                  {displayTransaction.transaction_items!.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex justify-between items-start p-3 rounded-lg bg-accent/30 border border-border"
+                    >
+                      <div>
+                        <p className="font-semibold">{item.product_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.quantity} × {formatCurrency(item.unit_price)}
+                        </p>
+                      </div>
+                      <p className="font-semibold">{formatCurrency(item.line_total)}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* HPP Items */}
           <Card className="shadow-sm">
             <CardContent className="p-6">
@@ -317,26 +421,46 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
                   </p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nama</TableHead>
-                      <TableHead>Jumlah</TableHead>
-                      <TableHead>Catatan</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+                <>
+                  <div className="md:hidden space-y-2">
                     {displayTransaction.hpp_items.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell className="font-semibold">{item.name}</TableCell>
-                        <TableCell>{formatCurrency(item.amount)}</TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {item.note || "—"}
-                        </TableCell>
-                      </TableRow>
+                      <div
+                        key={item.id}
+                        className="flex justify-between items-start p-3 rounded-lg bg-accent/30 border border-border"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-semibold">{item.name}</p>
+                          {item.note && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{item.note}</p>
+                          )}
+                        </div>
+                        <p className="font-semibold shrink-0 ml-2">{formatCurrency(item.amount)}</p>
+                      </div>
                     ))}
-                  </TableBody>
-                </Table>
+                  </div>
+                  <div className="hidden md:block">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Nama</TableHead>
+                          <TableHead>Jumlah</TableHead>
+                          <TableHead>Catatan</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {displayTransaction.hpp_items.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-semibold">{item.name}</TableCell>
+                            <TableCell>{formatCurrency(item.amount)}</TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {item.note || "—"}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
 
               {displayTransaction.hpp_items.length > 0 && (

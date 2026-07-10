@@ -4,20 +4,14 @@
 
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser, getUserProfile } from "@/lib/supabase-server";
+import { getUserProfile } from "@/lib/supabase-server";
 import { getStoreSettings } from "@/lib/store-queries";
 import { SettingsClient } from "./settings-client";
 
-export const dynamic = "force-dynamic";
-
 export default async function PengaturanPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const profile = await getUserProfile();
   if (!profile) redirect("/login");
 
-  // Hanya Owner yang bisa akses halaman ini
   if (profile.role !== "OWNER") {
     redirect("/dashboard/karyawan");
   }

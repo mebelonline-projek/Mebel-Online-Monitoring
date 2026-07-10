@@ -54,6 +54,11 @@ interface Props {
   totalPages: number;
   query: string;
   statusFilter: string;
+  onMutated?: () => void;
+  clientNav?: {
+    onFilterChange: (q: string, status: string) => void;
+    onPageChange: (page: number) => void;
+  };
 }
 
 const STATUS_OPTIONS = [
@@ -71,6 +76,8 @@ export function InvoiceListClient({
   totalPages,
   query: initialQuery,
   statusFilter: initialStatus,
+  onMutated,
+  clientNav,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -95,15 +102,27 @@ export function InvoiceListClient({
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    if (clientNav) {
+      clientNav.onFilterChange(searchQuery, statusValue);
+      return;
+    }
     router.push(buildUrl({ q: searchQuery, status: statusValue }));
   };
 
   const handleStatusChange = (newStatus: string) => {
     setStatusValue(newStatus);
+    if (clientNav) {
+      clientNav.onFilterChange(searchQuery, newStatus);
+      return;
+    }
     router.push(buildUrl({ status: newStatus, q: searchQuery }));
   };
 
   const goToPage = (page: number) => {
+    if (clientNav) {
+      clientNav.onPageChange(page);
+      return;
+    }
     const sp = new URLSearchParams(searchParams.toString());
     sp.set("page", page.toString());
     router.push(`/invoice?${sp.toString()}`);
@@ -116,7 +135,8 @@ export function InvoiceListClient({
       if (error) throw error;
       toast.success(`Invoice ${deleteTarget.number} berhasil dihapus`);
       setDeleteTarget(null);
-      router.refresh();
+      if (onMutated) onMutated();
+      else router.refresh();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Gagal menghapus invoice");
     }
@@ -142,8 +162,8 @@ export function InvoiceListClient({
 
       {/* Filter Bar */}
       <div className="flex flex-col sm:flex-row gap-3">
-        <form onSubmit={handleSearch} className="flex gap-2 flex-1">
-          <div className="relative flex-1 max-w-sm">
+        <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 flex-1 w-full">
+          <div className="relative flex-1 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Cari invoice atau pelanggan..."
@@ -203,7 +223,61 @@ export function InvoiceListClient({
         </Card>
       ) : (
         <>
-          <Card className="shadow-sm overflow-hidden">
+          <div className="md:hidden space-y-3">
+            {invoices.map((inv) => (
+              <Card
+                key={inv.id}
+                className="shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
+                onClick={() => router.push(`/invoice/${inv.id}`)}
+              >
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-bold">{inv.invoice_number}</span>
+                    <Badge
+                      className={
+                        inv.status === "PAID" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                        inv.status === "DRAFT" ? "bg-muted text-muted-foreground" :
+                        inv.status === "SENT" ? "bg-primary/10 text-primary" :
+                        "bg-destructive/10 text-destructive"
+                      }
+                    >
+                      {inv.status}
+                    </Badge>
+                  </div>
+                  <p className="font-semibold">{inv.customer_name || "—"}</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-muted-foreground text-xs">Total</p>
+                      <p className="font-semibold">{formatCurrency(inv.total_amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground text-xs">Sisa</p>
+                      <p className={inv.remaining_amount > 0 ? "font-semibold text-amber-600 dark:text-amber-400" : "text-muted-foreground"}>
+                        {inv.remaining_amount > 0 ? formatCurrency(inv.remaining_amount) : "✓ Lunas"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-muted-foreground">{formatDate(inv.created_at)}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 text-destructive hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget({ id: inv.id, number: inv.invoice_number });
+                      }}
+                      aria-label="Hapus invoice"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="shadow-sm overflow-hidden hidden md:block">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>

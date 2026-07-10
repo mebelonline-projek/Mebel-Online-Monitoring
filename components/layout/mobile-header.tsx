@@ -5,8 +5,11 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Sun, Moon, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase-client";
+import { StoreLogo } from "@/components/shared/store-logo";
+import { useStore } from "@/components/providers/store-context";
 
 export function MobileHeader() {
+  const { store } = useStore();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -18,35 +21,25 @@ export function MobileHeader() {
     window.location.href = "/login";
   };
 
+  const brandName = store.store_name || "Mebel Online";
+
   return (
-    <header className="lg:hidden sticky top-0 z-40 w-full border-b border-border bg-background shadow-sm">
-      <div className="flex items-center justify-between h-14 px-4">
-        {/* Kiri: Logo */}
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg overflow-hidden border border-border/60 flex-shrink-0 bg-muted flex items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.webp"
-              alt="Logo"
-              className="w-full h-full object-contain p-0.5"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
-            />
-          </div>
-          <span className="font-bold text-sm tracking-tight text-foreground">
-            Mebel Online
+    <header className="lg:hidden sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur-sm shadow-sm pt-[env(safe-area-inset-top,0px)]">
+      <div className="flex items-center justify-between h-14 px-3 sm:px-4">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <StoreLogo src={store.logo_url} alt={brandName} size="xs" />
+          <span className="font-bold text-sm tracking-tight text-foreground truncate">
+            {brandName}
           </span>
         </div>
 
-        {/* Kanan: Dark Mode Toggle + Logout */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {mounted && (
             <Button
               variant="outline"
               size="sm"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="gap-1.5 h-8 px-2.5 rounded-lg"
+              className="h-10 w-10 p-0 rounded-lg sm:h-8 sm:w-auto sm:px-2.5 sm:gap-1.5"
               aria-label={theme === "dark" ? "Mode Terang" : "Mode Gelap"}
             >
               {theme === "dark" ? (
@@ -54,7 +47,7 @@ export function MobileHeader() {
               ) : (
                 <Moon className="w-4 h-4 text-slate-600" />
               )}
-              <span className="text-xs font-medium">
+              <span className="hidden sm:inline text-xs font-medium">
                 {theme === "dark" ? "Terang" : "Gelap"}
               </span>
             </Button>
@@ -63,11 +56,11 @@ export function MobileHeader() {
             variant="outline"
             size="sm"
             onClick={handleLogout}
-            className="gap-1.5 h-8 px-2.5 rounded-lg text-destructive hover:text-destructive border-destructive/20 hover:border-destructive/40"
-            aria-label="Logout"
+            className="h-10 w-10 p-0 rounded-lg sm:h-8 sm:w-auto sm:px-2.5 sm:gap-1.5 text-destructive hover:text-destructive border-destructive/20 hover:border-destructive/40"
+            aria-label="Keluar"
           >
             <LogOut className="w-4 h-4" />
-            <span className="text-xs font-medium">Log out</span>
+            <span className="hidden sm:inline text-xs font-medium">Keluar</span>
           </Button>
         </div>
       </div>

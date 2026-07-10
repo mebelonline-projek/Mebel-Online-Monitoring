@@ -55,10 +55,10 @@ export const getCurrentUser = cache(async () => {
 });
 
 export const getUserProfile = cache(async () => {
-  const supabase = await getCachedSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
   if (!user) return null;
 
+  const supabase = await getCachedSupabaseClient();
   const { data } = await supabase
     .from("users")
     .select("id, name, email, role, avatar_url")

@@ -4,7 +4,7 @@
 
 import React from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { InvoiceData } from "@/components/invoice/invoice-document";
+import type { InvoiceData, InvoiceLineItem } from "@/components/invoice/invoice-document";
 
 function formatIdDate(iso: string): string {
   return new Date(iso).toLocaleDateString("id-ID", {
@@ -14,6 +14,8 @@ function formatIdDate(iso: string): string {
   });
 }
 
+import { DEFAULT_LOGO } from "@/lib/store-logo";
+
 function resolveLogoUrl(
   settingsLogo: string | null | undefined,
   request: Request
@@ -22,7 +24,41 @@ function resolveLogoUrl(
   const origin = request.headers.get("origin") || request.headers.get("host") || "";
   const protocol = origin.includes("localhost") ? "http" : "https";
   const host = origin.includes("localhost") ? "localhost:3000" : origin;
-  return `${protocol}://${host}/logo.webp`;
+  return `${protocol}://${host}${DEFAULT_LOGO}`;
+}
+
+export function mapTransactionLineItems(
+  items: Array<{
+    product_name: string;
+    quantity: number;
+    unit_price: number;
+    line_total: number;
+    note: string | null;
+    sort_order: number;
+  }> | null | undefined,
+  fallback: { description: string | null; final_price: number }
+): InvoiceLineItem[] {
+  if (items && items.length > 0) {
+    return [...items]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((item) => ({
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        line_total: item.line_total,
+        note: item.note,
+      }));
+  }
+
+  return [
+    {
+      product_name: fallback.description || "Pesanan",
+      quantity: 1,
+      unit_price: fallback.final_price,
+      line_total: fallback.final_price,
+      note: null,
+    },
+  ];
 }
 
 export async function buildNotaPdfData(
@@ -34,7 +70,8 @@ export async function buildNotaPdfData(
     .from("transactions")
     .select(`
       *,
-      transaction_payments (*)
+      transaction_payments (*),
+      transaction_items (*)
     `)
     .eq("id", transactionId)
     .maybeSingle();
@@ -56,6 +93,17 @@ export async function buildNotaPdfData(
 
   const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
   const remainingAmount = transaction.final_price - totalPaid;
+  const lineItems = mapTransactionLineItems(
+    transaction.transaction_items as Array<{
+      product_name: string;
+      quantity: number;
+      unit_price: number;
+      line_total: number;
+      note: string | null;
+      sort_order: number;
+    }> | null,
+    { description: transaction.description, final_price: transaction.final_price }
+  );
 
   return {
     invoiceNumber: transaction.transaction_number,
@@ -68,9 +116,10 @@ export async function buildNotaPdfData(
     customerName: transaction.customer_name || "—",
     customerPhone: null,
     customerAddress: null,
-    productName: transaction.description || "—",
+    productName: lineItems.map((i) => i.product_name).join(", "),
     productDescription: null,
     description: transaction.description || null,
+    lineItems,
     finalPrice: transaction.final_price,
     paymentType: transaction.payment_type,
     dpAmount: transaction.dp_amount || 0,

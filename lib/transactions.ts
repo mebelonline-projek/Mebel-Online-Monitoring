@@ -10,7 +10,19 @@ import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { createServerSupabaseClient, getCurrentUser } from "@/lib/supabase-server";
-import { transactionSchema, hppItemSchema, paymentSchema } from "@/lib/validation";
+import { transactionSchema, transactionCreateSchema, hppItemSchema, paymentSchema, fulfillmentUpdateSchema } from "@/lib/validation";
+import {
+  addWibDays,
+  getWibDateString,
+  getWibDayLabel,
+  getWibPeriodBounds,
+  getWibMonthEnd,
+  parseWibDate,
+  wibEndISO,
+  wibStartISO,
+  wibToDate,
+  type PeriodType,
+} from "@/lib/date-utils";
 import type { ActionState } from "@/types/common";
 
 // Helper: admin client (bypass RLS) untuk operasi write yang tidak bisa dilakukan Karyawan
@@ -56,9 +68,23 @@ export interface TransactionRow {
   created_at: string;
   updated_at: string;
   void_at: string | null;
+  fulfillment_status?: string;
+}
+
+export interface TransactionItemRow {
+  id: string;
+  transaction_id: string;
+  product_id: string | null;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+  note: string | null;
+  sort_order: number;
 }
 
 export interface TransactionWithRelations extends TransactionRow {
+  transaction_items?: TransactionItemRow[];
   hpp_items?: Array<{ id: string; name: string; amount: number; note: string | null }>;
   transaction_payments?: Array<{ id: string; amount: number; payment_date: string; method: string; note: string | null }>;
 }
@@ -66,6 +92,7 @@ export interface TransactionWithRelations extends TransactionRow {
 export interface TransactionListParams {
   q?: string;
   status?: string;
+  fulfillment?: string;
   page?: number;
   limit?: number;
 }
@@ -74,10 +101,10 @@ export interface TransactionListParams {
 // CREATE — Tambah transaksi
 // ============================================================
 export async function createTransaction(
-  formData: z.infer<typeof transactionSchema>
+  formData: z.infer<typeof transactionCreateSchema>
 ): Promise<ActionState<{ id: string; transaction_number: string }>> {
   try {
-    const parsed = transactionSchema.safeParse(formData);
+    const parsed = transactionCreateSchema.safeParse(formData);
     if (!parsed.success) {
       return {
         success: false,
@@ -107,15 +134,55 @@ export async function createTransaction(
     const isCash = data.payment_type === "CASH";
     const status = isCash ? "LUNAS" : "DP";
 
+    const itemsTotal =
+      data.items && data.items.length > 0
+        ? data.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0)
+        : 0;
+    const finalPrice = itemsTotal > 0 ? itemsTotal : data.final_price;
+    const description =
+      data.items && data.items.length > 0
+        ? data.items.map((i) => i.product_name).join(", ")
+        : data.description || null;
+    const firstProductId =
+      data.items && data.items.length > 0 && data.items[0].product_id
+        ? data.items[0].product_id
+        : data.product_id && data.product_id.length > 0
+          ? data.product_id
+          : null;
+
+    if (data.payment_type === "DP" && data.dp_amount >= finalPrice) {
+      return { success: false, message: "DP harus kurang dari harga final" };
+    }
+
+    if (data.client_id) {
+      const { data: existing } = await supabase
+        .from("transactions")
+        .select("id, transaction_number")
+        .eq("client_id", data.client_id)
+        .maybeSingle();
+
+      if (existing) {
+        return {
+          success: true,
+          message: `Transaksi ${existing.transaction_number} sudah tersinkronkan`,
+          data: { id: existing.id, transaction_number: existing.transaction_number },
+        };
+      }
+    }
+
     const { data: transaction, error: txError } = await supabase
       .from("transactions")
       .insert({
+        client_id: data.client_id || null,
+        customer_id: data.customer_id && data.customer_id.length > 0 ? data.customer_id : null,
+        product_id: firstProductId,
         customer_name: data.customer_name || null,
-        description: data.description || null,
-        final_price: data.final_price,
+        description,
+        final_price: finalPrice,
         payment_type: data.payment_type,
-        dp_amount: isCash ? data.final_price : data.dp_amount,
+        dp_amount: isCash ? finalPrice : data.dp_amount,
         status,
+        fulfillment_status: "MENUNGGU",
         created_by: user.id,
       })
       .select("id, transaction_number")
@@ -128,13 +195,33 @@ export async function createTransaction(
       return { success: false, message: "Gagal membuat transaksi" };
     }
 
-    const paymentAmount = isCash ? data.final_price : data.dp_amount;
+    if (data.items && data.items.length > 0) {
+      const rows = data.items.map((item, index) => ({
+        transaction_id: transaction.id,
+        product_id: item.product_id && item.product_id.length > 0 ? item.product_id : null,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        line_total: item.quantity * item.unit_price,
+        note: item.note || null,
+        sort_order: index,
+      }));
+
+      const { error: itemsError } = await supabase.from("transaction_items").insert(rows);
+      if (itemsError) {
+        await supabase.from("transactions").delete().eq("id", transaction.id);
+        return { success: false, message: `Gagal menyimpan item: ${itemsError.message}` };
+      }
+    }
+
+    const paymentAmount = isCash ? finalPrice : data.dp_amount;
+    const paymentMethod = data.payment_method || "TUNAI";
     const { error: payError } = await supabase
       .from("transaction_payments")
       .insert({
         transaction_id: transaction.id,
         amount: paymentAmount,
-        method: "TUNAI",
+        method: paymentMethod,
         note: isCash ? "Pembayaran Lunas" : "Uang Muka (DP)",
         created_by: user.id,
       });
@@ -233,7 +320,8 @@ export async function getTransactionById(id: string) {
       .select(`
         *,
         hpp_items (*),
-        transaction_payments (*)
+        transaction_payments (*),
+        transaction_items (*)
       `)
       .eq("id", id)
       .maybeSingle();
@@ -246,13 +334,63 @@ export async function getTransactionById(id: string) {
       return { success: false, message: "Transaksi tidak ditemukan" };
     }
 
+    const tx = data as unknown as TransactionWithRelations;
+    if (tx.transaction_items) {
+      tx.transaction_items.sort((a, b) => a.sort_order - b.sort_order);
+    }
+
     return {
       success: true,
-      data: data as unknown as TransactionWithRelations & {
+      data: tx as TransactionWithRelations & {
         hpp_items: Array<{ id: string; name: string; amount: number; note: string | null }>;
         transaction_payments: Array<{ id: string; amount: number; payment_date: string; method: string; note: string | null }>;
       },
     };
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "Terjadi kesalahan",
+    };
+  }
+}
+
+// ============================================================
+// UPDATE FULFILLMENT — Status produksi/pengiriman
+// ============================================================
+export async function updateFulfillmentStatus(
+  formData: z.infer<typeof fulfillmentUpdateSchema>
+): Promise<ActionState> {
+  try {
+    const parsed = fulfillmentUpdateSchema.safeParse(formData);
+    if (!parsed.success) {
+      return { success: false, message: "Data tidak valid" };
+    }
+
+    const user = await getCurrentUser();
+    if (!user) return { success: false, message: "Anda harus login" };
+
+    const supabase = await createServerSupabaseClient();
+
+    const { data: existing } = await supabase
+      .from("transactions")
+      .select("id, status")
+      .eq("id", parsed.data.id)
+      .maybeSingle();
+
+    if (!existing) return { success: false, message: "Transaksi tidak ditemukan" };
+    if (existing.status === "BATAL") {
+      return { success: false, message: "Transaksi batal tidak bisa diubah statusnya" };
+    }
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({ fulfillment_status: parsed.data.fulfillment_status })
+      .eq("id", parsed.data.id);
+
+    if (error) return { success: false, message: error.message };
+
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    return { success: true, message: "Status pesanan diperbarui" };
   } catch (error) {
     return {
       success: false,
@@ -334,6 +472,8 @@ export async function updateTransaction(
     const { error: updateError } = await supabase
       .from("transactions")
       .update({
+        customer_id: data.customer_id && data.customer_id.length > 0 ? data.customer_id : null,
+        product_id: data.product_id && data.product_id.length > 0 ? data.product_id : null,
         customer_name: data.customer_name || null,
         description: data.description || null,
         final_price: data.final_price,
@@ -456,9 +596,12 @@ export async function voidTransaction(
       return { success: false, message: voidError.message };
     }
 
+    await syncLinkedInvoiceTotals(supabase, [id]);
+
     // Invalidate cache
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidateTag(CACHE_TAGS.invoices, { expire: 0 });
 
     return {
       success: true,
@@ -718,6 +861,101 @@ export async function deleteHppItem(id: string): Promise<ActionState> {
 }
 
 // ============================================================
+// INVOICE SYNC — Recalculate totals dari transaksi terkait
+// ============================================================
+async function syncLinkedInvoiceTotals(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  transactionIds: string[]
+): Promise<void> {
+  if (transactionIds.length === 0) return;
+
+  const { data: linkedItems } = await supabase
+    .from("invoice_items")
+    .select("invoice_id, transaction_id")
+    .in("transaction_id", transactionIds);
+
+  if (!linkedItems || linkedItems.length === 0) return;
+
+  const invoiceIds = [...new Set(linkedItems.map((i) => i.invoice_id))];
+
+  const { data: allInvoiceItems } = await supabase
+    .from("invoice_items")
+    .select("invoice_id, transaction_id")
+    .in("invoice_id", invoiceIds);
+
+  if (!allInvoiceItems || allInvoiceItems.length === 0) return;
+
+  const allTxIds = [...new Set(allInvoiceItems.map((i) => i.transaction_id))];
+
+  const [{ data: allTx }, { data: allPayments }, { data: allInvoices }] = await Promise.all([
+    supabase.from("transactions").select("id, final_price, status").in("id", allTxIds),
+    supabase.from("transaction_payments").select("amount, transaction_id").in("transaction_id", allTxIds),
+    supabase.from("invoices").select("id, status").in("id", invoiceIds),
+  ]);
+
+  const txMap = new Map((allTx || []).map((t) => [t.id, t]));
+  const invStatusMap = new Map((allInvoices || []).map((i) => [i.id, i.status]));
+
+  await Promise.all(
+    invoiceIds.map(async (invoiceId) => {
+      const itemTxIds = allInvoiceItems
+        .filter((i) => i.invoice_id === invoiceId)
+        .map((i) => i.transaction_id);
+
+      const validTxIds = itemTxIds.filter((id) => {
+        const tx = txMap.get(id);
+        return tx && tx.status !== "BATAL";
+      });
+
+      if (validTxIds.length === 0) {
+        return supabase
+          .from("invoices")
+          .update({
+            total_amount: 0,
+            total_paid: 0,
+            remaining_amount: 0,
+            status: "CANCELLED",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", invoiceId);
+      }
+
+      const totalAmount = validTxIds.reduce(
+        (sum, id) => sum + (txMap.get(id)?.final_price || 0),
+        0
+      );
+      const totalPaid = (allPayments || [])
+        .filter((p) => validTxIds.includes(p.transaction_id))
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+      const remaining = totalAmount - totalPaid;
+
+      const currentStatus = invStatusMap.get(invoiceId);
+      let newStatus: "DRAFT" | "SENT" | "PAID" | "CANCELLED";
+      if (remaining <= 0 && totalAmount > 0) {
+        newStatus = "PAID";
+      } else if (currentStatus === "PAID" && remaining > 0) {
+        newStatus = "SENT";
+      } else if (currentStatus === "CANCELLED") {
+        newStatus = "DRAFT";
+      } else {
+        newStatus = (currentStatus as typeof newStatus) || "DRAFT";
+      }
+
+      return supabase
+        .from("invoices")
+        .update({
+          total_amount: totalAmount,
+          total_paid: totalPaid,
+          remaining_amount: remaining,
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", invoiceId);
+    })
+  );
+}
+
+// ============================================================
 // PAYMENT — Input pelunasan
 // ============================================================
 export async function addPayment(
@@ -814,70 +1052,12 @@ export async function addPayment(
         .eq("id", transactionId);
     }
 
-    // ── Auto-sync invoice totals (OPTIMIZED) ──
-    // ⚡ Batch: ambil semua data dalam 4 query, aggregate di JS, update parallel
-    const { data: linkedItems } = await supabase
-      .from("invoice_items")
-      .select("invoice_id")
-      .eq("transaction_id", transactionId);
-
-    if (linkedItems && linkedItems.length > 0) {
-      const invoiceIds = [...new Set(linkedItems.map((i) => i.invoice_id))];
-
-      const { data: allInvoiceItems } = await supabase
-        .from("invoice_items")
-        .select("invoice_id, transaction_id")
-        .in("invoice_id", invoiceIds);
-
-      if (allInvoiceItems && allInvoiceItems.length > 0) {
-        const allTxIds = [...new Set(allInvoiceItems.map((i) => i.transaction_id))];
-
-        const { data: allPayments } = await supabase
-          .from("transaction_payments")
-          .select("amount, transaction_id")
-          .in("transaction_id", allTxIds);
-
-        const { data: allInvoices } = await supabase
-          .from("invoices")
-          .select("id, total_amount")
-          .in("id", invoiceIds);
-
-        if (allInvoices && allInvoices.length > 0) {
-          // Aggregate total_paid per invoice di JS
-          const paidByInvoice = new Map<string, number>();
-          for (const item of allInvoiceItems) {
-            const txPayments = (allPayments || []).filter(
-              (p) => p.transaction_id === item.transaction_id
-            );
-            const total = txPayments.reduce((s, p) => s + (p.amount || 0), 0);
-            paidByInvoice.set(
-              item.invoice_id,
-              (paidByInvoice.get(item.invoice_id) || 0) + total
-            );
-          }
-
-          // Parallel update semua invoice
-          await Promise.all(
-            allInvoices.map((inv) => {
-              const syncedPaid = paidByInvoice.get(inv.id) || 0;
-              const syncedRemaining = inv.total_amount - syncedPaid;
-              return supabase
-                .from("invoices")
-                .update({
-                  total_paid: syncedPaid,
-                  remaining_amount: syncedRemaining,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("id", inv.id);
-            })
-          );
-        }
-      }
-    }
+    await syncLinkedInvoiceTotals(supabase, [transactionId]);
 
     // Invalidate cache
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidateTag(CACHE_TAGS.invoices, { expire: 0 });
 
     const statusMsg = newStatus === "LUNAS" ? " — LUNAS ✅" : "";
 
@@ -963,9 +1143,26 @@ export async function createInvoice(data: {
     if (txErr) return { success: false, message: txErr.message };
     if (!txs || txs.length === 0) return { success: false, message: "Transaksi tidak ditemukan" };
 
-    const invalidTx = txs.filter((t) => t.status === "BATAL");
-    if (invalidTx.length > 0) {
+    const batalTx = txs.filter((t) => t.status === "BATAL");
+    if (batalTx.length > 0) {
       return { success: false, message: "Tidak bisa membuat invoice dari transaksi yang dibatalkan" };
+    }
+
+    const lunasTx = txs.filter((t) => t.status === "LUNAS");
+    if (lunasTx.length > 0) {
+      return {
+        success: false,
+        message: "Transaksi yang sudah lunas tidak bisa dibuat invoice. Gunakan Nota sebagai bukti bayar.",
+      };
+    }
+
+    const eligibleStatuses = ["DP", "MENUNGGU_PELUNASAN"];
+    const ineligibleTx = txs.filter((t) => !eligibleStatuses.includes(t.status));
+    if (ineligibleTx.length > 0) {
+      return {
+        success: false,
+        message: "Invoice hanya bisa dibuat dari transaksi DP atau menunggu pelunasan",
+      };
     }
 
     const totalAmount = txs.reduce((sum, t) => sum + t.final_price, 0);
@@ -1185,7 +1382,7 @@ export interface DashboardMonthlyData {
   txCount: number;
 }
 
-export type PeriodType = "daily" | "weekly" | "monthly" | "yearly";
+export type { PeriodType };
 
 export interface DashboardStats {
   revenue: number;
@@ -1214,16 +1411,11 @@ export interface DashboardStats {
   }>;
 }
 
-// ── Date helpers ──
+// ── Date helpers (WIB) ──
 function fmtDateISO(d: Date): string { return d.toISOString(); }
 function fmtDateOnly(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return getWibDateString(d);
 }
-function dayStart(d: Date): Date { const c = new Date(d); c.setHours(0, 0, 0, 0); return c; }
-function dayEnd(d: Date): Date { const c = new Date(d); c.setHours(23, 59, 59, 999); return c; }
 
 // ── Batch: ambil semua data chart dalam 3-4 query ──
 async function fetchChartRawData(
@@ -1346,57 +1538,10 @@ function computePeriodStat(
 // ── Core dashboard logic (tanpa Supabase client di wrapper) ──
 async function computeDashboardStats(period: PeriodType): Promise<DashboardStats> {
   const supabase = await createServerSupabaseClient();
-  const now = new Date();
+  const today = getWibDateString();
 
-  // ── 1. Tentukan: KPI (1 unit), Prev (1 unit), Chart (rentang penuh) ──
-  let kpiStart: Date, kpiEnd: Date;
-  let prevStart: Date, prevEnd: Date;
-  let chartStart: Date, chartEnd: Date;
-
-  if (period === "daily") {
-    kpiStart = dayStart(now);
-    kpiEnd = dayEnd(now);
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    prevStart = dayStart(yesterday);
-    prevEnd = dayEnd(yesterday);
-    chartStart = new Date(now);
-    chartStart.setDate(chartStart.getDate() - 29);
-    chartStart.setHours(0, 0, 0, 0);
-    chartEnd = dayEnd(now);
-  } else if (period === "weekly") {
-    const currDay = now.getDay();
-    const monOffset = currDay === 0 ? -6 : 1 - currDay;
-    kpiStart = new Date(now);
-    kpiStart.setDate(kpiStart.getDate() + monOffset);
-    kpiStart.setHours(0, 0, 0, 0);
-    kpiEnd = new Date(kpiStart);
-    kpiEnd.setDate(kpiEnd.getDate() + 6);
-    kpiEnd.setHours(23, 59, 59, 999);
-    prevStart = new Date(kpiStart);
-    prevStart.setDate(prevStart.getDate() - 7);
-    prevEnd = new Date(kpiEnd);
-    prevEnd.setDate(prevEnd.getDate() - 7);
-    chartStart = new Date(kpiStart);
-    chartStart.setDate(chartStart.getDate() - 77);
-    chartEnd = kpiEnd;
-  } else if (period === "monthly") {
-    kpiStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-    kpiEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-    prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0);
-    prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-    chartStart = new Date(now.getFullYear(), now.getMonth() - 11, 1, 0, 0, 0);
-    chartEnd = kpiEnd;
-  } else {
-    kpiStart = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
-    kpiEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
-    prevStart = new Date(now.getFullYear() - 1, 0, 1, 0, 0, 0);
-    prevEnd = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
-    chartStart = new Date(now.getFullYear() - 4, 0, 1, 0, 0, 0);
-    chartEnd = kpiEnd;
-  }
-
-  // ── 2. Fetch SEMUA data dalam SATU batch ──
+  const { kpiStart, kpiEnd, prevStart, prevEnd, chartStart, chartEnd } =
+    getWibPeriodBounds(period);
   const { allPayments, allTx, allHpp, allOpCosts } = await fetchChartRawData(
     supabase, chartStart, chartEnd
   );
@@ -1418,61 +1563,73 @@ async function computeDashboardStats(period: PeriodType): Promise<DashboardStats
 
   // ── 4. Build chart data (monthlyData) pakai batch, bukan DB query ──
   const monthlyData: DashboardMonthlyData[] = [];
-  const dayLabels = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
   const monthLabels = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
 
   if (period === "daily") {
     for (let d = 29; d >= 0; d--) {
-      const ds = new Date(now);
-      ds.setDate(ds.getDate() - d);
-      const s = dayStart(ds);
-      const e = dayEnd(ds);
+      const dateStr = addWibDays(today, -d);
+      const s = wibToDate(wibStartISO(dateStr));
+      const e = wibToDate(wibEndISO(dateStr));
       const stat = computePeriodStat(allPayments, allHpp, allOpCosts, allTx, s, e);
+      const { day, month } = parseWibDate(dateStr);
       monthlyData.push({
-        month: fmtDateOnly(s),
-        monthLabel: `${dayLabels[ds.getDay()]} ${ds.getDate()}/${ds.getMonth() + 1}`,
+        month: dateStr,
+        monthLabel: `${getWibDayLabel(dateStr)} ${day}/${month}`,
         revenue: stat.revenue, hpp: stat.hpp, grossProfit: stat.grossProfit,
         operationalCosts: stat.operationalCosts, netProfit: stat.netProfit, txCount: stat.txCount,
       });
     }
   } else if (period === "weekly") {
-    const currDay = now.getDay();
-    const monOffset = currDay === 0 ? -6 : 1 - currDay;
+    const monday = (() => {
+      const bounds = getWibPeriodBounds("weekly");
+      return getWibDateString(bounds.kpiStart);
+    })();
     for (let w = 11; w >= 0; w--) {
-      const ws = new Date(now);
-      ws.setDate(ws.getDate() + monOffset - w * 7);
-      const s = dayStart(ws);
-      const e = new Date(s);
-      e.setDate(e.getDate() + 6);
-      e.setHours(23, 59, 59, 999);
+      const weekStartStr = addWibDays(monday, -w * 7);
+      const weekEndStr = addWibDays(weekStartStr, 6);
+      const s = wibToDate(wibStartISO(weekStartStr));
+      const e = wibToDate(wibEndISO(weekEndStr));
       const stat = computePeriodStat(allPayments, allHpp, allOpCosts, allTx, s, e);
+      const ws = parseWibDate(weekStartStr);
+      const we = parseWibDate(weekEndStr);
       monthlyData.push({
-        month: `W${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, "0")}-${String(s.getDate()).padStart(2, "0")}`,
-        monthLabel: `${s.getDate()}/${s.getMonth() + 1} - ${e.getDate()}/${e.getMonth() + 1}`,
+        month: `W${weekStartStr}`,
+        monthLabel: `${ws.day}/${ws.month} - ${we.day}/${we.month}`,
         revenue: stat.revenue, hpp: stat.hpp, grossProfit: stat.grossProfit,
         operationalCosts: stat.operationalCosts, netProfit: stat.netProfit, txCount: stat.txCount,
       });
     }
   } else if (period === "monthly") {
+    const { year, month } = parseWibDate(today);
     for (let m = 0; m < 12; m++) {
-      const s = new Date(now.getFullYear(), now.getMonth() - 11 + m, 1, 0, 0, 0);
-      const e = new Date(s.getFullYear(), s.getMonth() + 1, 0, 23, 59, 59, 999);
+      let cy = year;
+      let cm = month - 11 + m;
+      while (cm <= 0) {
+        cm += 12;
+        cy -= 1;
+      }
+      const monthStartStr = `${cy}-${String(cm).padStart(2, "0")}-01`;
+      const monthEndStr = getWibMonthEnd(monthStartStr);
+      const s = wibToDate(wibStartISO(monthStartStr));
+      const e = wibToDate(wibEndISO(monthEndStr));
       const stat = computePeriodStat(allPayments, allHpp, allOpCosts, allTx, s, e);
       monthlyData.push({
-        month: `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, "0")}`,
-        monthLabel: `${monthLabels[s.getMonth()]} ${s.getFullYear()}`,
+        month: `${cy}-${String(cm).padStart(2, "0")}`,
+        monthLabel: `${monthLabels[cm - 1]} ${cy}`,
         revenue: stat.revenue, hpp: stat.hpp, grossProfit: stat.grossProfit,
         operationalCosts: stat.operationalCosts, netProfit: stat.netProfit, txCount: stat.txCount,
       });
     }
   } else {
+    const currentYear = parseWibDate(today).year;
     for (let y = 4; y >= 0; y--) {
-      const year = now.getFullYear() - y;
-      const s = new Date(year, 0, 1, 0, 0, 0);
-      const e = new Date(year, 11, 31, 23, 59, 59, 999);
+      const year = currentYear - y;
+      const s = wibToDate(wibStartISO(`${year}-01-01`));
+      const e = wibToDate(wibEndISO(`${year}-12-31`));
       const stat = computePeriodStat(allPayments, allHpp, allOpCosts, allTx, s, e);
       monthlyData.push({
-        month: `${year}`, monthLabel: `${year}`,
+        month: `${year}`,
+        monthLabel: `${year}`,
         revenue: stat.revenue, hpp: stat.hpp, grossProfit: stat.grossProfit,
         operationalCosts: stat.operationalCosts, netProfit: stat.netProfit, txCount: stat.txCount,
       });
@@ -1534,96 +1691,108 @@ export interface TransactionsPageData {
   batalCount: number;
 }
 
-export const getTransactionsPageData = unstable_cache(
-  async (params: TransactionListParams = {}): Promise<TransactionsPageData> => {
-    const supabase = await createServerSupabaseClient();
-    const { q = "", status = "", page = 1, limit = 10 } = params;
-    const offset = (page - 1) * limit;
+export async function getTransactionsPageData(
+  params: TransactionListParams = {}
+): Promise<TransactionsPageData> {
+  const supabase = await createServerSupabaseClient();
+  const { q = "", status = "", fulfillment = "", page = 1, limit = 10 } = params;
+  const offset = (page - 1) * limit;
 
-    // Query data + count
-    let txQuery = supabase
-      .from("transactions")
-      .select(`
+  let txQuery = supabase
+    .from("transactions")
+    .select(
+      `
         id, transaction_number, customer_name, description,
-        final_price, payment_type, dp_amount, status,
+        final_price, payment_type, dp_amount, status, fulfillment_status,
         created_at, updated_at, void_reason
-      `, { count: "exact" });
-
-    if (status && status !== "semua") {
-      txQuery = txQuery.eq("status", status);
-    }
-    if (q) {
-      txQuery = txQuery.or(`transaction_number.ilike.%${q}%,customer_name.ilike.%${q}%`);
-    }
-
-    // ⚡ 2 query paralel: data + semua status (bukan 5 query)
-    const [{ data: transactions, count: total }, { data: allStatuses }] = await Promise.all([
-      txQuery.order("created_at", { ascending: false }).range(offset, offset + limit - 1),
-      supabase.from("transactions").select("status"),
-    ]);
-
-    // Hitung count per status di JS
-    const statusCounts = (allStatuses || []).reduce(
-      (acc, t) => { acc[t.status] = (acc[t.status] || 0) + 1; return acc; },
-      {} as Record<string, number>
+      `,
+      { count: "exact" }
     );
 
-    return {
-      transactions: (transactions || []) as unknown as TransactionWithRelations[],
-      total: total || 0,
-      totalPages: Math.ceil((total || 0) / limit),
-      lunasCount: statusCounts["LUNAS"] || 0,
-      dpCount: statusCounts["DP"] || 0,
-      menungguCount: statusCounts["MENUNGGU_PELUNASAN"] || 0,
-      batalCount: statusCounts["BATAL"] || 0,
-    };
-  },
-  ["transactions-page-data"],
-  { revalidate: 30, tags: [CACHE_TAGS.transactions] }
-);
+  if (status && status !== "semua") {
+    txQuery = txQuery.eq("status", status);
+  }
+  if (fulfillment && fulfillment !== "semua") {
+    txQuery = txQuery.eq("fulfillment_status", fulfillment);
+  }
+  if (q) {
+    txQuery = txQuery.or(`transaction_number.ilike.%${q}%,customer_name.ilike.%${q}%`);
+  }
+
+  const [
+    { data: transactions, count: total },
+    { count: lunasCount },
+    { count: dpCount },
+    { count: menungguCount },
+    { count: batalCount },
+  ] = await Promise.all([
+    txQuery.order("created_at", { ascending: false }).range(offset, offset + limit - 1),
+    supabase.from("transactions").select("*", { count: "exact", head: true }).eq("status", "LUNAS"),
+    supabase.from("transactions").select("*", { count: "exact", head: true }).eq("status", "DP"),
+    supabase
+      .from("transactions")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "MENUNGGU_PELUNASAN"),
+    supabase.from("transactions").select("*", { count: "exact", head: true }).eq("status", "BATAL"),
+  ]);
+
+  return {
+    transactions: (transactions || []) as unknown as TransactionWithRelations[],
+    total: total || 0,
+    totalPages: Math.ceil((total || 0) / limit),
+    lunasCount: lunasCount || 0,
+    dpCount: dpCount || 0,
+    menungguCount: menungguCount || 0,
+    batalCount: batalCount || 0,
+  };
+}
 
 // ============================================================
-// ⚡ INVOICE LIST — Cached: 30 detik, invalidasi via revalidateTag("invoices")
+// INVOICE LIST — dipanggil dari API route (tanpa unstable_cache)
 // ============================================================
-export const getInvoicesCached = unstable_cache(
-  async (params: { q?: string; status?: string; page?: number; limit?: number } = {}) => {
-    const supabase = await createServerSupabaseClient();
-    const { q = "", status = "", page = 1, limit = 10 } = params;
-    const offset = (page - 1) * limit;
+export async function getInvoicesList(
+  params: { q?: string; status?: string; page?: number; limit?: number } = {}
+) {
+  const supabase = await createServerSupabaseClient();
+  const { q = "", status = "", page = 1, limit = 10 } = params;
+  const offset = (page - 1) * limit;
 
-    let query = supabase
-      .from("invoices")
-      .select(`
+  let query = supabase
+    .from("invoices")
+    .select(
+      `
         id, invoice_number, customer_name, status,
         total_amount, total_paid, remaining_amount,
         notes, created_by, created_at, updated_at
-      `, { count: "exact" });
+      `,
+      { count: "exact" }
+    );
 
-    if (status && status !== "semua") {
-      query = query.eq("status", status);
-    }
-    if (q) {
-      query = query.or(`invoice_number.ilike.%${q}%,customer_name.ilike.%${q}%`);
-    }
+  if (status && status !== "semua") {
+    query = query.eq("status", status);
+  }
+  if (q) {
+    query = query.or(`invoice_number.ilike.%${q}%,customer_name.ilike.%${q}%`);
+  }
 
-    const { data, count, error } = await query
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+  const { data, count, error } = await query
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
 
-    if (error) {
-      return { success: false, message: error.message, data: [], total: 0, totalPages: 0 };
-    }
+  if (error) {
+    return { success: false, message: error.message, data: [], total: 0, totalPages: 0, currentPage: page };
+  }
 
-    const totalPages = Math.ceil((count || 0) / limit);
+  const totalPages = Math.ceil((count || 0) / limit);
 
-    return {
-      success: true,
-      data: (data || []) as unknown as InvoiceRow[],
-      total: count || 0,
-      totalPages,
-      currentPage: page,
-    };
-  },
-  ["invoices-list"],
-  { revalidate: 30, tags: [CACHE_TAGS.invoices] }
-);
+  return {
+    success: true,
+    data: (data || []) as unknown as InvoiceRow[],
+    total: count || 0,
+    totalPages,
+    currentPage: page,
+  };
+}
+
+/** @deprecated Pakai getInvoicesList — alias backward compat */
+export const getInvoicesCached = getInvoicesList;

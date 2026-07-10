@@ -29,7 +29,8 @@ export default async function DetailTransaksiPage({
     .select(`
       *,
       hpp_items (*),
-      transaction_payments (*, created_by)
+      transaction_payments (*, created_by),
+      transaction_items (*)
     `)
     .eq("id", id)
     .maybeSingle();

@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser, getUserProfile, createServerSupabaseClient } from "@/lib/supabase-server";
-import { getWibDayBounds } from "@/lib/date-utils";
+import { getUserProfile } from "@/lib/supabase-server";
+import { getKaryawanDashboardData } from "@/lib/karyawan-dashboard";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { FulfillmentBadge } from "@/components/shared/fulfillment-badge";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,48 +24,15 @@ import {
   ArrowRight,
 } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
 export default async function KaryawanDashboardPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login");
-
   const profile = await getUserProfile();
   if (!profile || profile.role !== "KARYAWAN") redirect("/login");
 
-  const supabase = await createServerSupabaseClient();
-  const { start: todayStart, end: todayEnd } = getWibDayBounds();
+  const { transactions, activeOrders, todayCount, pendingCount, completedCount } =
+    await getKaryawanDashboardData();
 
-  // Parallel queries — 4 query sekaligus
-  const [
-    { data: transactions },
-    { count: todayCount },
-    { count: pendingCount },
-    { count: completedCount },
-  ] = await Promise.all([
-    supabase
-      .from("transactions")
-      .select("id, transaction_number, customer_name, final_price, status, created_at")
-      .order("created_at", { ascending: false })
-      .limit(10),
-    supabase
-      .from("transactions")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", todayStart)
-      .lte("created_at", todayEnd),
-    supabase
-      .from("transactions")
-      .select("*", { count: "exact", head: true })
-      .in("status", ["DP", "MENUNGGU_PELUNASAN"]),
-    supabase
-      .from("transactions")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "LUNAS")
-      .gte("updated_at", todayStart)
-      .lte("updated_at", todayEnd),
-  ]);
-
-  const txList = transactions || [];
+  const txList = transactions;
+  const activeOrderList = activeOrders;
   const pendingTx = txList.filter((t) => t.status === "DP" || t.status === "MENUNGGU_PELUNASAN");
 
   const days = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -105,15 +73,15 @@ export default async function KaryawanDashboardPage() {
             {todayName}, {dateStr}
           </p>
         </div>
-        <div className="flex gap-3">
-          <Button variant="secondary" asChild className="gap-2">
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button variant="secondary" asChild className="gap-2 w-full sm:w-auto min-h-[44px]">
             <Link href="/transaksi">
               <Search className="w-4 h-4" />
               Cari Transaksi
             </Link>
           </Button>
-          <Button asChild className="gap-2">
-            <Link href="/transaksi/tambah">
+          <Button asChild className="gap-2 w-full sm:w-auto min-h-[44px]">
+            <Link href="/kasir">
               <Plus className="w-4 h-4" />
               Transaksi Baru
             </Link>
@@ -141,6 +109,33 @@ export default async function KaryawanDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <Card className="shadow-sm">
+          <CardContent className="p-6">
+            <h3 className="text-lg font-bold mb-6">Pesanan Aktif</h3>
+            {activeOrderList.length === 0 ? (
+              <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
+                Tidak ada pesanan dalam produksi
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {activeOrderList.map((tx) => (
+                  <Link
+                    key={tx.id}
+                    href={`/transaksi/${tx.id}`}
+                    className="block p-4 rounded-lg bg-accent border border-border hover:bg-primary/5 transition-colors"
+                  >
+                    <div className="flex justify-between items-start gap-2 mb-2">
+                      <span className="font-mono text-sm font-bold">{tx.transaction_number}</span>
+                      <FulfillmentBadge status={tx.fulfillment_status || "MENUNGGU"} />
+                    </div>
+                    <p className="font-medium text-sm">{tx.customer_name || "—"}</p>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <Card className="shadow-sm">
           <CardContent className="p-6">
             <h3 className="text-lg font-bold mb-6">Perlu Tindakan</h3>
@@ -197,35 +192,55 @@ export default async function KaryawanDashboardPage() {
                 Belum ada transaksi
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Transaksi</TableHead>
-                    <TableHead>Pelanggan</TableHead>
-                    <TableHead>Jumlah</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <>
+                <div className="md:hidden space-y-3">
                   {txList.map((tx) => (
-                    <TableRow key={tx.id}>
-                      <TableCell className="font-medium">
-                        <Link
-                          href={`/transaksi/${tx.id}`}
-                          className="hover:text-primary transition-colors"
-                        >
-                          {tx.transaction_number}
-                        </Link>
-                      </TableCell>
-                      <TableCell>{tx.customer_name || "—"}</TableCell>
-                      <TableCell>{formatCurrency(tx.final_price)}</TableCell>
-                      <TableCell>
+                    <Link
+                      key={tx.id}
+                      href={`/transaksi/${tx.id}`}
+                      className="block p-4 rounded-lg bg-accent/50 border border-border hover:bg-primary/5 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="font-mono text-sm font-bold">{tx.transaction_number}</span>
                         <StatusBadge status={tx.status} />
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                      <p className="font-medium">{tx.customer_name || "—"}</p>
+                      <p className="text-sm font-semibold mt-1">{formatCurrency(tx.final_price)}</p>
+                    </Link>
                   ))}
-                </TableBody>
-              </Table>
+                </div>
+                <div className="hidden md:block">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Transaksi</TableHead>
+                        <TableHead>Pelanggan</TableHead>
+                        <TableHead>Jumlah</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {txList.map((tx) => (
+                        <TableRow key={tx.id}>
+                          <TableCell className="font-medium">
+                            <Link
+                              href={`/transaksi/${tx.id}`}
+                              className="hover:text-primary transition-colors"
+                            >
+                              {tx.transaction_number}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{tx.customer_name || "—"}</TableCell>
+                          <TableCell>{formatCurrency(tx.final_price)}</TableCell>
+                          <TableCell>
+                            <StatusBadge status={tx.status} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

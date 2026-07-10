@@ -59,6 +59,7 @@ export async function createOperationalCost(
     if (!data) return { success: false, message: "Gagal menambahkan biaya operasional" };
 
     revalidateTag(CACHE_TAG, { expire: 0 });
+    revalidateTag("dashboard", { expire: 0 });
     return { success: true, data: { id: data.id }, message: "Biaya berhasil ditambahkan" };
   } catch (error) {
     return {
@@ -113,6 +114,7 @@ export async function updateOperationalCost(
     if (error) return { success: false, message: error.message };
 
     revalidateTag(CACHE_TAG, { expire: 0 });
+    revalidateTag("dashboard", { expire: 0 });
     return { success: true, message: "Biaya berhasil diupdate" };
   } catch (error) {
     return {
@@ -151,6 +153,7 @@ export async function deleteOperationalCost(id: string): Promise<ActionState> {
     if (error) return { success: false, message: error.message };
 
     revalidateTag(CACHE_TAG, { expire: 0 });
+    revalidateTag("dashboard", { expire: 0 });
     return { success: true, message: "Biaya berhasil dihapus" };
   } catch (error) {
     return {
@@ -170,57 +173,60 @@ export interface OperationalCostsListResult {
   distinctCategories: string[];
 }
 
-export const getOperationalCostsList = unstable_cache(
-  async (params: { bulan?: string; page?: number; limit?: number } = {}): Promise<OperationalCostsListResult> => {
-    const supabase = await createServerSupabaseClient();
-    const { bulan, page = 1, limit = 10 } = params;
-    const offset = (page - 1) * limit;
+export async function getOperationalCostsList(
+  params: { bulan?: string; dari?: string; sampai?: string; page?: number; limit?: number } = {}
+): Promise<OperationalCostsListResult> {
+  const supabase = await createServerSupabaseClient();
+  const { bulan, dari, sampai, page = 1, limit = 10 } = params;
+  const offset = (page - 1) * limit;
 
-    // Hitung date range dari bulan
-    let start: string, end: string;
-    if (bulan) {
-      const [tahun, bulanNum] = bulan.split("-").map(Number);
-      start = `${tahun}-${String(bulanNum).padStart(2, "0")}-01`;
-      const nextMonth = bulanNum === 12 ? 1 : bulanNum + 1;
-      const nextYear = bulanNum === 12 ? tahun + 1 : tahun;
-      end = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
-    } else {
-      const now = new Date();
-      const y = now.getFullYear();
-      const m = String(now.getMonth() + 1).padStart(2, "0");
-      start = `${y}-${m}-01`;
-      const nextMonth = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
-      const nextYear = now.getMonth() === 11 ? y + 1 : y;
-      end = `${nextYear}-${String(nextMonth + 1).padStart(2, "0")}-01`;
-    }
+  let start: string;
+  let end: string;
 
-    // Query costs + distinct categories paralel
-    const [{ data: costs, count: total }, { data: allCategories }] = await Promise.all([
-      supabase
-        .from("operational_costs")
-        .select("*", { count: "exact" })
-        .lte("period_start", end)
-        .gte("period_end", start)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1),
-      supabase
-        .from("operational_costs")
-        .select("category")
-        .not("category", "is", null),
-    ]);
+  if (dari && sampai) {
+    start = dari;
+    const endDate = new Date(sampai);
+    endDate.setDate(endDate.getDate() + 1);
+    end = endDate.toISOString().split("T")[0];
+  } else if (bulan) {
+    const [tahun, bulanNum] = bulan.split("-").map(Number);
+    start = `${tahun}-${String(bulanNum).padStart(2, "0")}-01`;
+    const nextMonth = bulanNum === 12 ? 1 : bulanNum + 1;
+    const nextYear = bulanNum === 12 ? tahun + 1 : tahun;
+    end = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+  } else {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    start = `${y}-${m}-01`;
+    const nextMonth = now.getMonth() === 11 ? 0 : now.getMonth() + 1;
+    const nextYear = now.getMonth() === 11 ? y + 1 : y;
+    end = `${nextYear}-${String(nextMonth + 1).padStart(2, "0")}-01`;
+  }
 
-    const distinctCategories = [...new Set((allCategories || []).map((r) => r.category).filter(Boolean))].sort();
+  const [{ data: costs, count: total }, { data: allCategories }] = await Promise.all([
+    supabase
+      .from("operational_costs")
+      .select("*", { count: "exact" })
+      .lte("period_start", end)
+      .gte("period_end", start)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1),
+    supabase
+      .from("operational_costs")
+      .select("category")
+      .not("category", "is", null),
+  ]);
 
-    return {
-      costs: (costs || []) as OperationalCostRow[],
-      total: total || 0,
-      totalPages: Math.ceil((total || 0) / limit),
-      distinctCategories,
-    };
-  },
-  ["operational-costs-list"],
-  { revalidate: 30, tags: [CACHE_TAG] }
-);
+  const distinctCategories = [...new Set((allCategories || []).map((r) => r.category).filter(Boolean))].sort();
+
+  return {
+    costs: (costs || []) as OperationalCostRow[],
+    total: total || 0,
+    totalPages: Math.ceil((total || 0) / limit),
+    distinctCategories,
+  };
+}
 
 // ============================================================
 // READ — Distinct Categories (legacy, tetap ada untuk backward compat)

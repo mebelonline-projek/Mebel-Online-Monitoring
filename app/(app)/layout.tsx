@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser, getUserProfile } from "@/lib/supabase-server";
-import { AdminLayout } from "@/components/layout/admin-layout";
+import { getCurrentUser } from "@/lib/supabase-server";
+import { ProfileLoader } from "@/components/layout/profile-loader";
 
 export default async function AppLayout({
   children,
@@ -10,8 +10,5 @@ export default async function AppLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const profile = await getUserProfile();
-  if (!profile) redirect("/login");
-
-  return <AdminLayout profile={profile}>{children}</AdminLayout>;
+  return <ProfileLoader>{children}</ProfileLoader>;
 }

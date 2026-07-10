@@ -6,8 +6,12 @@
 
 import { NextResponse } from "next/server";
 import { addPayment } from "@/lib/transactions";
+import { requireApiAuth } from "@/lib/api-auth";
 
 export async function POST(request: Request) {
+  const auth = await requireApiAuth();
+  if (auth.error) return auth.error;
+
   try {
     const body = await request.json();
     const result = await addPayment(body);

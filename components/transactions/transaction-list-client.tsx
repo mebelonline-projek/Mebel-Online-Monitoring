@@ -6,11 +6,14 @@
 // Tabel daftar transaksi dengan: filter status, search, pagination.
 // ============================================================
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/formatters";
+import { toast } from "sonner";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { FulfillmentBadge } from "@/components/shared/fulfillment-badge";
+import { FULFILLMENT_STATUSES } from "@/config/fulfillment";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,7 +35,9 @@ import {
   CheckCircle,
   Clock,
   XCircle,
+  Download,
 } from "lucide-react";
+import { downloadCsv } from "@/lib/export-csv";
 
 interface TransactionItem {
   id: string;
@@ -43,6 +48,7 @@ interface TransactionItem {
   payment_type: "CASH" | "DP";
   dp_amount: number;
   status: string;
+  fulfillment_status?: string;
   created_at: string;
   updated_at: string;
   void_reason: string | null;
@@ -55,11 +61,18 @@ interface Props {
   totalPages: number;
   query: string;
   statusFilter: string;
+  fulfillmentFilter: string;
   profileRole: string;
   lunasCount: number;
   dpCount: number;
   menungguCount: number;
   batalCount: number;
+  clientNav?: {
+    onQueryChange: (q: string) => void;
+    onStatusChange: (status: string) => void;
+    onFulfillmentChange: (fulfillment: string) => void;
+    onPageChange: (page: number) => void;
+  };
 }
 
 const STATUS_OPTIONS = [
@@ -77,17 +90,27 @@ export function TransactionListClient({
   totalPages,
   query: initialQuery,
   statusFilter: initialStatus,
+  fulfillmentFilter: initialFulfillment,
   profileRole,
   lunasCount,
   dpCount,
   menungguCount,
   batalCount,
+  clientNav,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [statusValue, setStatusValue] = useState(initialStatus);
+  const [fulfillmentValue, setFulfillmentValue] = useState(initialFulfillment);
+
+  useEffect(() => {
+    setSearchQuery(initialQuery);
+    setStatusValue(initialStatus);
+    setFulfillmentValue(initialFulfillment);
+  }, [initialQuery, initialStatus, initialFulfillment]);
 
   const buildUrl = useCallback(
     (params: Record<string, string>) => {
@@ -102,23 +125,80 @@ export function TransactionListClient({
     [searchParams]
   );
 
+  const navigate = useCallback(
+    (url: string) => {
+      if (clientNav) return;
+      startTransition(() => {
+        router.push(url);
+      });
+    },
+    [router, clientNav]
+  );
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    router.push(buildUrl({ q: searchQuery, status: statusValue }));
+    if (clientNav) {
+      clientNav.onQueryChange(searchQuery);
+      return;
+    }
+    navigate(buildUrl({ q: searchQuery, status: statusValue, fulfillment: fulfillmentValue }));
   };
+
+  useEffect(() => {
+    if (searchQuery === initialQuery) return;
+    const timer = setTimeout(() => {
+      if (clientNav) clientNav.onQueryChange(searchQuery);
+      else navigate(buildUrl({ q: searchQuery, status: statusValue, fulfillment: fulfillmentValue }));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery, statusValue, fulfillmentValue, initialQuery, navigate, buildUrl, clientNav]);
 
   const handleStatusChange = (newStatus: string) => {
     setStatusValue(newStatus);
-    router.push(buildUrl({ status: newStatus, q: searchQuery }));
+    if (clientNav) {
+      clientNav.onStatusChange(newStatus);
+      return;
+    }
+    navigate(buildUrl({ status: newStatus, q: searchQuery, fulfillment: fulfillmentValue }));
+  };
+
+  const handleFulfillmentChange = (newFulfillment: string) => {
+    setFulfillmentValue(newFulfillment);
+    if (clientNav) {
+      clientNav.onFulfillmentChange(newFulfillment);
+      return;
+    }
+    navigate(buildUrl({ fulfillment: newFulfillment, q: searchQuery, status: statusValue }));
   };
 
   const goToPage = (page: number) => {
+    if (clientNav) {
+      clientNav.onPageChange(page);
+      return;
+    }
     const sp = new URLSearchParams(searchParams.toString());
     sp.set("page", page.toString());
-    router.push(`/transaksi?${sp.toString()}`);
+    navigate(`/transaksi?${sp.toString()}`);
   };
 
-  const isFiltered = searchQuery || statusValue !== "semua";
+  const isFiltered = searchQuery || statusValue !== "semua" || fulfillmentValue !== "semua";
+  const isOwner = profileRole === "OWNER";
+
+  const handleExportCsv = () => {
+    downloadCsv(`transaksi-${new Date().toISOString().slice(0, 10)}.csv`, [
+      ["No Transaksi", "Pelanggan", "Deskripsi", "Harga", "Bayar", "Pesanan", "Tanggal"],
+      ...transactions.map((tx) => [
+        tx.transaction_number,
+        tx.customer_name || "",
+        tx.description || "",
+        tx.final_price.toString(),
+        tx.status,
+        tx.fulfillment_status || "MENUNGGU",
+        tx.created_at,
+      ]),
+    ]);
+    toast.success("CSV berhasil diunduh");
+  };
 
   const statCards = [
     {
@@ -148,7 +228,7 @@ export function TransactionListClient({
   ];
 
   return (
-    <div className="space-y-6 p-4 md:p-6 lg:p-8">
+    <div className={`space-y-6 p-4 md:p-6 lg:p-8 transition-opacity ${isPending ? "opacity-60" : ""}`}>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -157,18 +237,26 @@ export function TransactionListClient({
             Kelola semua transaksi penjualan
           </p>
         </div>
-        <Button asChild className="gap-2">
-          <Link href="/transaksi/tambah">
-            <Plus className="w-4 h-4" />
-            Transaksi Baru
-          </Link>
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          {isOwner && transactions.length > 0 && (
+            <Button variant="outline" onClick={handleExportCsv} className="gap-2 min-h-[44px]">
+              <Download className="w-4 h-4" />
+              Export CSV
+            </Button>
+          )}
+          <Button asChild className="gap-2 min-h-[44px]">
+            <Link href="/kasir">
+              <Plus className="w-4 h-4" />
+              Transaksi Baru
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Filter Bar */}
       <div className="flex flex-col sm:flex-row gap-3">
         <form onSubmit={handleSearch} className="flex gap-2 flex-1">
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 w-full sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Cari transaksi atau nama pelanggan..."
@@ -186,7 +274,7 @@ export function TransactionListClient({
               variant="outline"
               onClick={() => {
                 setSearchQuery("");
-                router.push(buildUrl({ q: "", status: statusValue }));
+                router.push(buildUrl({ q: "", status: statusValue, fulfillment: fulfillmentValue }));
               }}
             >
               Reset
@@ -201,6 +289,29 @@ export function TransactionListClient({
               variant={statusValue === opt.value ? "default" : "outline"}
               size="xs"
               onClick={() => handleStatusChange(opt.value)}
+              className="rounded-full text-xs"
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+
+        <div className="flex gap-1 flex-wrap">
+          <span className="text-xs text-muted-foreground self-center mr-1">Pesanan:</span>
+          <Button
+            variant={fulfillmentValue === "semua" ? "default" : "outline"}
+            size="xs"
+            onClick={() => handleFulfillmentChange("semua")}
+            className="rounded-full text-xs"
+          >
+            Semua
+          </Button>
+          {FULFILLMENT_STATUSES.map((opt) => (
+            <Button
+              key={opt.value}
+              variant={fulfillmentValue === opt.value ? "default" : "outline"}
+              size="xs"
+              onClick={() => handleFulfillmentChange(opt.value)}
               className="rounded-full text-xs"
             >
               {opt.label}
@@ -250,7 +361,7 @@ export function TransactionListClient({
             </p>
             {!isFiltered && (
               <Button asChild variant="outline" className="mt-4 gap-2">
-                <Link href="/transaksi/tambah">
+                <Link href="/kasir">
                   <Plus className="w-4 h-4" />
                   Transaksi Baru
                 </Link>
@@ -260,7 +371,39 @@ export function TransactionListClient({
         </Card>
       ) : (
         <>
-          <Card className="shadow-sm overflow-hidden">
+          {/* Mobile card list */}
+          <div className="md:hidden space-y-3">
+            {transactions.map((tx) => (
+              <Card
+                key={tx.id}
+                className="shadow-sm cursor-pointer active:scale-[0.99] transition-transform"
+                onClick={() => router.push(`/transaksi/${tx.id}`)}
+              >
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-mono text-sm font-bold">{tx.transaction_number}</span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      <StatusBadge status={tx.status} />
+                      {tx.fulfillment_status && tx.status !== "BATAL" && (
+                        <FulfillmentBadge status={tx.fulfillment_status} />
+                      )}
+                    </div>
+                  </div>
+                  <p className="font-semibold truncate">{tx.customer_name || "Tanpa nama"}</p>
+                  {tx.description && (
+                    <p className="text-muted-foreground text-sm truncate">{tx.description}</p>
+                  )}
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-muted-foreground text-xs">{formatDate(tx.created_at)}</span>
+                    <span className="font-bold text-primary">{formatCurrency(tx.final_price)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Desktop table */}
+          <Card className="shadow-sm overflow-hidden hidden md:block">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -269,7 +412,8 @@ export function TransactionListClient({
                     <TableHead>Pelanggan</TableHead>
                     <TableHead>Produk</TableHead>
                     <TableHead>Total</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Status Bayar</TableHead>
+                    <TableHead>Pesanan</TableHead>
                     <TableHead>Tanggal</TableHead>
                     <TableHead className="w-[80px]">Aksi</TableHead>
                   </TableRow>
@@ -295,6 +439,13 @@ export function TransactionListClient({
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={tx.status} />
+                      </TableCell>
+                      <TableCell>
+                        {tx.status !== "BATAL" && tx.fulfillment_status ? (
+                          <FulfillmentBadge status={tx.fulfillment_status} />
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {formatDate(tx.created_at)}
@@ -351,6 +502,17 @@ export function TransactionListClient({
           )}
         </>
       )}
+
+      {/* FAB mobile */}
+      <Button
+        asChild
+        size="lg"
+        className="lg:hidden fixed fab-bottom right-4 z-40 h-14 w-14 rounded-full shadow-lg p-0"
+      >
+        <Link href="/kasir" aria-label="Transaksi baru">
+          <Plus className="w-6 h-6" />
+        </Link>
+      </Button>
     </div>
   );
 }

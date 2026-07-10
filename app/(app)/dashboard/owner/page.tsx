@@ -205,32 +205,55 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
               <span>Belum ada transaksi. Mulai catat transaksi pertama Anda!</span>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Transaksi</TableHead>
-                  <TableHead>Pelanggan</TableHead>
-                  <TableHead>Jumlah</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Tanggal</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <div className="md:hidden space-y-3">
                 {stats.recentTransactions.map((tx) => (
-                  <TableRow key={tx.id}>
-                    <TableCell className="font-mono text-sm font-bold">
-                      <Link href={`/transaksi/${tx.id}`} className="hover:text-primary transition-colors">
-                        {tx.transaction_number}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-sm">{tx.customer_name}</TableCell>
-                    <TableCell className="font-bold">{formatCurrency(tx.final_price)}</TableCell>
-                    <TableCell><StatusBadge status={tx.status} /></TableCell>
-                    <TableCell className="text-muted-foreground text-sm">{formatDate(tx.created_at)}</TableCell>
-                  </TableRow>
+                  <Link
+                    key={tx.id}
+                    href={`/transaksi/${tx.id}`}
+                    className="block p-4 rounded-lg bg-accent/50 border border-border hover:bg-primary/5 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="font-mono text-sm font-bold">{tx.transaction_number}</span>
+                      <StatusBadge status={tx.status} />
+                    </div>
+                    <p className="font-medium">{tx.customer_name}</p>
+                    <div className="flex justify-between items-center mt-2 text-sm">
+                      <span className="font-bold">{formatCurrency(tx.final_price)}</span>
+                      <span className="text-muted-foreground">{formatDate(tx.created_at)}</span>
+                    </div>
+                  </Link>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+              <div className="hidden md:block overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Transaksi</TableHead>
+                      <TableHead>Pelanggan</TableHead>
+                      <TableHead>Jumlah</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Tanggal</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stats.recentTransactions.map((tx) => (
+                      <TableRow key={tx.id}>
+                        <TableCell className="font-mono text-sm font-bold">
+                          <Link href={`/transaksi/${tx.id}`} className="hover:text-primary transition-colors">
+                            {tx.transaction_number}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-sm">{tx.customer_name}</TableCell>
+                        <TableCell className="font-bold">{formatCurrency(tx.final_price)}</TableCell>
+                        <TableCell><StatusBadge status={tx.status} /></TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{formatDate(tx.created_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

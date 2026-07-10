@@ -7,6 +7,7 @@ import { getCurrentUser, getUserProfile, createServerSupabaseClient } from "@/li
 import { getStoreSettings } from "@/lib/store-queries";
 import { notFound } from "next/navigation";
 import { NotaDocument } from "@/components/nota/nota-document";
+import { mapTransactionLineItems } from "@/lib/pdf-invoice";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,8 @@ export default async function NotaPage({
     .from("transactions")
     .select(`
       *,
-      transaction_payments (*)
+      transaction_payments (*),
+      transaction_items (*)
     `)
     .eq("id", id)
     .maybeSingle();
@@ -47,19 +49,50 @@ export default async function NotaPage({
   // Ambil data toko
   const settings = await getStoreSettings();
 
+  const tx = transaction as {
+    transaction_number: string;
+    customer_name: string | null;
+    description: string | null;
+    final_price: number;
+    payment_type: string;
+    dp_amount: number;
+    status: string;
+    created_at: string;
+    transaction_payments: Array<{
+      id: string;
+      amount: number;
+      payment_date: string;
+      method: string;
+      note: string | null;
+    }>;
+    transaction_items?: Array<{
+      product_name: string;
+      quantity: number;
+      unit_price: number;
+      line_total: number;
+      note: string | null;
+      sort_order: number;
+    }>;
+  };
+
+  const lineItems = mapTransactionLineItems(tx.transaction_items, {
+    description: tx.description,
+    final_price: tx.final_price,
+  });
+
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto">
       <NotaDocument
         transaction_id={id}
-        transaction_number={(transaction as any).transaction_number}
-        customer_name={(transaction as any).customer_name || "—"}
-        product_name={(transaction as any).description || "—"}
-        final_price={(transaction as any).final_price}
-        payment_type={(transaction as any).payment_type}
-        dp_amount={(transaction as any).dp_amount}
-        status={(transaction as any).status}
-        created_at={(transaction as any).created_at}
-        payments={(transaction as any).transaction_payments || []}
+        transaction_number={tx.transaction_number}
+        customer_name={tx.customer_name || "—"}
+        lineItems={lineItems}
+        final_price={tx.final_price}
+        payment_type={tx.payment_type}
+        dp_amount={tx.dp_amount}
+        status={tx.status}
+        created_at={tx.created_at}
+        payments={tx.transaction_payments || []}
         store_name={settings?.store_name ?? undefined}
         store_address={settings?.address ?? undefined}
         store_phone={settings?.phone ?? undefined}
