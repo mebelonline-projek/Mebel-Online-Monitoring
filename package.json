@@ -2,6 +2,9 @@
   "name": "template-vibe-coding",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "next dev --webpack",
     "kill-node": "taskkill /F /IM node.exe 2>nul & echo Bersih",
@@ -12,7 +15,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "clean": "rm -rf .next out node_modules/.cache",
-    "preview": "npm run build && next start",
+    "preview": "npm run build && next start"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
