@@ -8,12 +8,12 @@
 
 "use server";
 
-import sharp from "sharp";
 import { createServerSupabaseClient, getCurrentUser, getUserProfile } from "@/lib/supabase-server";
 import { revalidatePath } from "next/cache";
 import type { ActionState } from "@/types/common";
 import { getStoreSettings, type StoreSettings } from "@/lib/store-queries";
 import { generatePwaIconsFromBuffer } from "@/lib/pwa-icons";
+import { processStoreLogoBuffer } from "@/lib/process-store-logo";
 
 // ============================================================
 // UPDATE — Update data toko (nama, alamat, telepon)
@@ -128,9 +128,7 @@ export async function uploadLogo(
     // ============================================================
     const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-    const webpBuffer = await sharp(fileBuffer)
-      .webp({ quality: 90 })
-      .toBuffer();
+    const webpBuffer = await processStoreLogoBuffer(fileBuffer);
 
     // ============================================================
     // STEP 3: Upload file WebP ke storage

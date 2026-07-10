@@ -12,12 +12,12 @@ const SIZE_CLASS = {
   xl: "w-32 h-32",
 } as const;
 
-const IMG_PADDING = {
-  xs: "p-1",
-  sm: "p-1",
-  md: "p-1.5",
-  lg: "p-2",
-  xl: "p-2.5",
+const RADIUS_CLASS = {
+  xs: "rounded-lg",
+  sm: "rounded-xl",
+  md: "rounded-xl",
+  lg: "rounded-2xl",
+  xl: "rounded-2xl",
 } as const;
 
 type StoreLogoSize = keyof typeof SIZE_CLASS;
@@ -47,17 +47,19 @@ export function StoreLogo({
   }, [src]);
 
   const resolved = failed ? DEFAULT_LOGO : imgSrc;
+  const isDefaultSvg = resolved === DEFAULT_LOGO;
 
   const frameClass =
     variant === "print"
-      ? "rounded-xl border border-gray-200 bg-gray-50 shadow-sm"
-      : "rounded-2xl border-2 border-primary/25 bg-gradient-to-br from-background via-muted/30 to-primary/5 shadow-md ring-1 ring-primary/10 dark:from-sidebar-accent/20 dark:to-primary/10";
+      ? "border border-gray-200 bg-gray-50 shadow-sm"
+      : "border-2 border-primary/25 bg-gradient-to-br from-background via-muted/30 to-primary/5 shadow-md ring-1 ring-primary/10 dark:from-sidebar-accent/20 dark:to-primary/10";
 
   return (
     <div
       className={cn(
-        "relative flex flex-shrink-0 items-center justify-center",
+        "relative flex flex-shrink-0 overflow-hidden",
         SIZE_CLASS[size],
+        RADIUS_CLASS[size],
         frameClass,
         className
       )}
@@ -66,7 +68,10 @@ export function StoreLogo({
       <img
         src={resolved}
         alt={alt}
-        className={cn("max-h-full max-w-full object-contain", IMG_PADDING[size])}
+        className={cn(
+          "h-full w-full",
+          isDefaultSvg ? "object-contain p-1" : "object-cover"
+        )}
         onError={() => {
           if (!failed) {
             setFailed(true);
