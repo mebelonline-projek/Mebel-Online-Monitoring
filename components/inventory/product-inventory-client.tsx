@@ -10,6 +10,7 @@ import {
   type InventoryProductRow,
   type CategoryRow,
   type StockRow,
+  type WarehouseRow,
 } from "@/lib/inventory";
 import { getTotalStock } from "@/lib/inventory-helpers";
 import { formatCurrency } from "@/lib/formatters";
@@ -45,6 +46,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Plus, Pencil, Trash2, Package, Search } from "lucide-react";
+import Link from "next/link";
 
 type FormState = {
   name: string;
@@ -52,6 +54,8 @@ type FormState = {
   base_price: string;
   min_stock: string;
   description: string;
+  warehouse_id: string;
+  initial_qty: string;
 };
 
 function ProductThumb({ name, photoUrl }: { name: string; photoUrl: string | null }) {
@@ -80,14 +84,23 @@ export function ProductInventoryClient({
   initialProducts,
   initialCategories,
   initialStocks,
+  initialWarehouses,
   loadError,
 }: {
   initialProducts: InventoryProductRow[];
   initialCategories: CategoryRow[];
   initialStocks: StockRow[];
+  initialWarehouses: WarehouseRow[];
   loadError?: string | null;
 }) {
   const router = useRouter();
+  const activeWarehouses = initialWarehouses.filter((w) => w.is_active);
+  const defaultWarehouseId =
+    activeWarehouses.find((w) => !w.is_sales_warehouse)?.id ||
+    activeWarehouses.find((w) => w.is_sales_warehouse)?.id ||
+    activeWarehouses[0]?.id ||
+    "";
+
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -112,6 +125,8 @@ export function ProductInventoryClient({
     base_price: "",
     min_stock: "0",
     description: "",
+    warehouse_id: defaultWarehouseId,
+    initial_qty: "0",
   });
 
   const filtered = useMemo(() => {
@@ -126,6 +141,14 @@ export function ProductInventoryClient({
   }, [initialProducts, initialCategories, searchQuery, categoryFilter]);
 
   const openCreate = () => {
+    if (initialCategories.length === 0) {
+      toast.error("Buat kategori dulu di menu Kategori");
+      return;
+    }
+    if (activeWarehouses.length === 0) {
+      toast.error("Buat gudang dulu di menu Gudang");
+      return;
+    }
     setEditing(null);
     setPhotoFile(null);
     setForm({
@@ -134,6 +157,8 @@ export function ProductInventoryClient({
       base_price: "",
       min_stock: "0",
       description: "",
+      warehouse_id: defaultWarehouseId,
+      initial_qty: "0",
     });
     setDialogOpen(true);
   };
@@ -147,15 +172,27 @@ export function ProductInventoryClient({
       base_price: String(p.base_price),
       min_stock: String(p.min_stock),
       description: p.description || "",
+      warehouse_id: defaultWarehouseId,
+      initial_qty: "0",
     });
     setDialogOpen(true);
   };
 
   const handleSubmit = async () => {
+    if (!form.name.trim() || form.name.trim().length < 2) {
+      toast.error("Nama minimal 2 karakter");
+      return;
+    }
     if (!form.category_id) {
       toast.error("Pilih kategori dulu");
       return;
     }
+    const initialQty = Math.max(0, Number(form.initial_qty) || 0);
+    if (!editing && initialQty > 0 && !form.warehouse_id) {
+      toast.error("Pilih gudang untuk stok awal");
+      return;
+    }
+
     setBusy(true);
     const payload = {
       name: form.name,
@@ -189,7 +226,11 @@ export function ProductInventoryClient({
       return;
     }
 
-    const result = await createInventoryProduct(payload);
+    const result = await createInventoryProduct({
+      ...payload,
+      warehouse_id: form.warehouse_id || null,
+      initial_qty: initialQty,
+    });
     if (!result.success) {
       setBusy(false);
       toast.error(result.message);
@@ -233,13 +274,33 @@ export function ProductInventoryClient({
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          Master barang (pcs). Foto dikompresi WebP otomatis.
-        </p>
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">
+            Master barang (pcs). Saat tambah, pilih gudang + stok awal (opsional).
+          </p>
+          {initialCategories.length === 0 && (
+            <p className="text-sm text-destructive">
+              Belum ada kategori —{" "}
+              <Link href="/gudang/kategori" className="underline font-medium">
+                buat kategori dulu
+              </Link>{" "}
+              agar bisa menambah barang.
+            </p>
+          )}
+          {activeWarehouses.length === 0 && (
+            <p className="text-sm text-destructive">
+              Belum ada gudang —{" "}
+              <Link href="/gudang" className="underline font-medium">
+                buat gudang dulu
+              </Link>
+              .
+            </p>
+          )}
+        </div>
         <Button
           onClick={openCreate}
           className="gap-2"
-          disabled={initialCategories.length === 0}
+          disabled={initialCategories.length === 0 || activeWarehouses.length === 0}
         >
           <Plus className="w-4 h-4" />
           Tambah Barang
@@ -474,6 +535,38 @@ export function ProductInventoryClient({
                 onChange={(e) => setForm((f) => ({ ...f, min_stock: e.target.value }))}
               />
             </div>
+            {!editing && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Gudang stok awal</label>
+                  <select
+                    value={form.warehouse_id}
+                    onChange={(e) => setForm((f) => ({ ...f, warehouse_id: e.target.value }))}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {activeWarehouses.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                        {w.is_sales_warehouse ? " (penjualan)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Default: Gudang Utama. Bisa diisi 0 lalu Mutasi IN nanti.
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Qty stok awal</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={form.initial_qty}
+                    onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+              </>
+            )}
             <div className="space-y-1">
               <label className="text-sm font-medium">Deskripsi (opsional)</label>
               <Input

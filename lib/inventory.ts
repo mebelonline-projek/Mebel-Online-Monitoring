@@ -81,11 +81,14 @@ const categorySchema = z.object({
 });
 
 const inventoryProductSchema = z.object({
-  name: z.string().min(2).max(200),
-  category_id: z.string().uuid(),
+  name: z.string().min(2, "Nama minimal 2 karakter").max(200),
+  category_id: z.string().uuid("Pilih kategori"),
   base_price: z.coerce.number().min(0).max(999_999_999),
   min_stock: z.coerce.number().int().min(0).max(999_999),
   description: z.string().max(500).optional().or(z.literal("")),
+  /** Gudang stok awal (hanya create) */
+  warehouse_id: z.string().uuid().optional().nullable(),
+  initial_qty: z.coerce.number().int().min(0).max(999_999).optional().default(0),
 });
 
 const movementSchema = z.object({
@@ -408,7 +411,16 @@ export async function createInventoryProduct(
     const auth = await requireInventoryWriter();
     if (!auth.success) return auth;
     const parsed = inventoryProductSchema.safeParse(input);
-    if (!parsed.success) return { success: false, message: "Validasi gagal" };
+    if (!parsed.success) {
+      const msg = parsed.error.issues[0]?.message || "Validasi gagal";
+      return { success: false, message: msg };
+    }
+
+    const initialQty = parsed.data.initial_qty ?? 0;
+    const warehouseId = parsed.data.warehouse_id || null;
+    if (initialQty > 0 && !warehouseId) {
+      return { success: false, message: "Pilih gudang untuk stok awal" };
+    }
 
     const supabase = await createServerSupabaseClient();
     const { data: cat } = await supabase
@@ -417,12 +429,16 @@ export async function createInventoryProduct(
       .eq("id", parsed.data.category_id)
       .maybeSingle();
 
+    if (!cat) {
+      return { success: false, message: "Kategori tidak ditemukan. Buat kategori dulu di menu Kategori." };
+    }
+
     const { data, error } = await supabase
       .from("products")
       .insert({
         name: parsed.data.name.trim(),
         category_id: parsed.data.category_id,
-        category: cat?.name || "LAINNYA",
+        category: cat.name || "LAINNYA",
         base_price: parsed.data.base_price,
         unit: "pcs",
         min_stock: parsed.data.min_stock,
@@ -435,15 +451,51 @@ export async function createInventoryProduct(
     if (error) return { success: false, message: error.message };
     if (!data) return { success: false, message: "Gagal menambah barang" };
 
+    // Stok 0 di semua gudang aktif (matriks stok lengkap)
     const { data: whs } = await supabase.from("warehouses").select("id").eq("is_active", true);
     if (whs?.length) {
-      await supabase.from("warehouse_stocks").insert(
+      const { error: stockErr } = await supabase.from("warehouse_stocks").insert(
         whs.map((w) => ({ warehouse_id: w.id, product_id: data.id, qty: 0 }))
       );
+      if (stockErr) {
+        return {
+          success: false,
+          message: `Barang dibuat, tapi gagal inisialisasi stok: ${stockErr.message}`,
+        };
+      }
+    }
+
+    // Stok awal → mutasi IN ke gudang yang dipilih
+    if (initialQty > 0 && warehouseId) {
+      const admin = createAdminClient();
+      const { error: inErr } = await admin.rpc("apply_stock_change", {
+        p_type: "IN",
+        p_product_id: data.id,
+        p_qty: initialQty,
+        p_from_warehouse_id: null,
+        p_to_warehouse_id: warehouseId,
+        p_note: "Stok awal saat tambah barang",
+        p_reference_type: "PRODUCT",
+        p_reference_id: data.id,
+        p_created_by: auth.data.userId,
+      });
+      if (inErr) {
+        return {
+          success: false,
+          message: `Barang dibuat, tapi stok awal gagal: ${inErr.message}. Isi via Mutasi IN.`,
+        };
+      }
     }
 
     revalidateInventory();
-    return { success: true, data: { id: data.id }, message: "Barang ditambahkan" };
+    return {
+      success: true,
+      data: { id: data.id },
+      message:
+        initialQty > 0
+          ? `Barang ditambahkan (+${initialQty} pcs stok awal)`
+          : "Barang ditambahkan (stok 0 — isi via Mutasi IN)",
+    };
   } catch (e) {
     return { success: false, message: e instanceof Error ? e.message : "Terjadi kesalahan" };
   }
