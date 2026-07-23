@@ -88,15 +88,29 @@ type FormState = {
   initial_qty: string;
 };
 
-function ProductThumb({ name, photoUrl }: { name: string; photoUrl: string | null }) {
+function ProductThumb({
+  name,
+  photoUrl,
+  onPreview,
+}: {
+  name: string;
+  photoUrl: string | null;
+  onPreview?: (url: string, name: string) => void;
+}) {
   if (photoUrl) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={photoUrl}
-        alt={name}
-        className="h-10 w-10 shrink-0 rounded-md object-cover"
-      />
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onPreview?.(photoUrl, name);
+        }}
+        aria-label={`Lihat foto ${name}`}
+        className="h-10 w-10 shrink-0 rounded-md overflow-hidden ring-offset-background transition hover:ring-2 hover:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={photoUrl} alt="" className="h-full w-full object-cover cursor-pointer" />
+      </button>
     );
   }
   return (
@@ -136,6 +150,9 @@ export function ProductInventoryClient({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<InventoryProductRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<InventoryProductRow | null>(null);
+  const [photoLightbox, setPhotoLightbox] = useState<{ url: string; name: string } | null>(
+    null
+  );
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -411,7 +428,11 @@ export function ProductInventoryClient({
                 <Card key={p.id} className="shadow-sm">
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-start gap-3">
-                      <ProductThumb name={p.name} photoUrl={p.photo_url} />
+                      <ProductThumb
+                        name={p.name}
+                        photoUrl={p.photo_url}
+                        onPreview={(url, n) => setPhotoLightbox({ url, name: n })}
+                      />
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <p className="font-semibold truncate">{p.name}</p>
@@ -474,7 +495,11 @@ export function ProductInventoryClient({
                     <TableRow key={p.id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
-                          <ProductThumb name={p.name} photoUrl={p.photo_url} />
+                          <ProductThumb
+                            name={p.name}
+                            photoUrl={p.photo_url}
+                            onPreview={(url, n) => setPhotoLightbox({ url, name: n })}
+                          />
                           <span className="font-semibold">{p.name}</span>
                         </div>
                       </TableCell>
@@ -648,6 +673,32 @@ export function ProductInventoryClient({
               {editing ? "Simpan" : "Tambah"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!photoLightbox}
+        onOpenChange={(open) => {
+          if (!open) setPhotoLightbox(null);
+        }}
+      >
+        <DialogContent
+          className="max-w-[calc(100%-1.5rem)] gap-0 border-0 bg-black/95 p-2 text-white ring-0 sm:max-w-2xl dark:bg-black/95 [&_button]:text-white [&_button]:hover:bg-white/15"
+          aria-describedby={undefined}
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>
+              {photoLightbox ? `Foto ${photoLightbox.name}` : "Preview foto"}
+            </DialogTitle>
+          </DialogHeader>
+          {photoLightbox ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={photoLightbox.url}
+              alt={photoLightbox.name}
+              className="mx-auto max-h-[85dvh] w-full object-contain"
+            />
+          ) : null}
         </DialogContent>
       </Dialog>
 
