@@ -461,30 +461,30 @@ export function ProductInventoryClient({
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="shrink-0 px-4 pt-4 pr-12">
             <DialogTitle>{editing ? "Edit Barang" : "Tambah Barang"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3">
             <div className="flex justify-center">
               {editing?.photo_url && !photoFile ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={editing.photo_url}
                   alt={editing.name}
-                  className="h-40 w-40 max-h-40 max-w-40 rounded-md object-cover border"
+                  className="h-28 w-28 max-h-28 max-w-28 rounded-md object-cover border"
                 />
               ) : photoPreview ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={photoPreview}
                   alt="Preview"
-                  className="h-40 w-40 max-h-40 max-w-40 rounded-md object-cover border"
+                  className="h-28 w-28 max-h-28 max-w-28 rounded-md object-cover border"
                 />
               ) : (
-                <div className="h-40 w-40 max-h-40 max-w-40 rounded-md bg-muted flex flex-col items-center justify-center gap-2 text-muted-foreground border border-dashed">
-                  <Package className="w-8 h-8" />
-                  <span className="text-xs text-center px-2">Preview foto (max 160px)</span>
+                <div className="h-28 w-28 max-h-28 max-w-28 rounded-md bg-muted flex flex-col items-center justify-center gap-1 text-muted-foreground border border-dashed">
+                  <Package className="w-6 h-6" />
+                  <span className="text-[10px] text-center px-1">Preview foto</span>
                 </div>
               )}
             </div>
@@ -576,7 +576,7 @@ export function ProductInventoryClient({
             </div>
             <p className="text-xs text-muted-foreground">Satuan: pcs</p>
           </div>
-          <DialogFooter>
+          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>
               Batal
             </Button>
