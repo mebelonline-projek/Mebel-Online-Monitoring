@@ -80,15 +80,18 @@ const categorySchema = z.object({
   name: z.string().min(2).max(100),
 });
 
-const inventoryProductSchema = z.object({
+const inventoryProductBaseSchema = z.object({
   name: z.string().min(2, "Nama minimal 2 karakter").max(200),
   category_id: z.string().uuid("Pilih kategori"),
   base_price: z.coerce.number().min(0).max(999_999_999),
   min_stock: z.coerce.number().int().min(0).max(999_999),
   description: z.string().max(500).optional().or(z.literal("")),
-  /** Gudang stok awal (hanya create) */
+});
+
+/** Create: boleh isi gudang + stok awal */
+const inventoryProductCreateSchema = inventoryProductBaseSchema.extend({
   warehouse_id: z.string().uuid().optional().nullable(),
-  initial_qty: z.coerce.number().int().min(0).max(999_999).optional().default(0),
+  initial_qty: z.coerce.number().int().min(0).max(999_999).optional(),
 });
 
 const movementSchema = z.object({
@@ -405,12 +408,12 @@ export async function deleteCategory(id: string): Promise<ActionState> {
 // ---------- PRODUCT + PHOTO ----------
 
 export async function createInventoryProduct(
-  input: z.infer<typeof inventoryProductSchema>
+  input: z.infer<typeof inventoryProductCreateSchema>
 ): Promise<ActionState<{ id: string }>> {
   try {
     const auth = await requireInventoryWriter();
     if (!auth.success) return auth;
-    const parsed = inventoryProductSchema.safeParse(input);
+    const parsed = inventoryProductCreateSchema.safeParse(input);
     if (!parsed.success) {
       const msg = parsed.error.issues[0]?.message || "Validasi gagal";
       return { success: false, message: msg };
@@ -503,12 +506,12 @@ export async function createInventoryProduct(
 
 export async function updateInventoryProduct(
   id: string,
-  input: z.infer<typeof inventoryProductSchema>
+  input: z.infer<typeof inventoryProductBaseSchema>
 ): Promise<ActionState> {
   try {
     const auth = await requireInventoryWriter();
     if (!auth.success) return auth;
-    const parsed = inventoryProductSchema.safeParse(input);
+    const parsed = inventoryProductBaseSchema.safeParse(input);
     if (!parsed.success) return { success: false, message: "Validasi gagal" };
 
     const supabase = await createServerSupabaseClient();
