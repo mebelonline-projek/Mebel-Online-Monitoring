@@ -18,9 +18,25 @@ Isi migrasi:
 Setelah SQL sukses:
 1. Restart / refresh app
 2. Login OWNER → menu **Gudang**
-3. Buat kategori & barang, mutasi IN, uji kasir potong stok
+3. Buat kategori & barang (dengan gudang + stok awal opsional), mutasi IN, uji kasir potong stok
 4. Pengaturan → User → tambah role **Gudang**
 5. Database Linter: warning inventori hilang; sisa ~5 ditoleransi (lihat `CLAUDE.md`)
+
+### Alur master barang (penting)
+
+| Menu | Untuk apa |
+|------|-----------|
+| **Gudang → Barang / Kategori / Stok / Mutasi** | Sumber kebenaran master barang + stok |
+| **Produk** | Katalog baca untuk Owner/Karyawan; tambah/edit lewat Gudang |
+
+- Jangan bypass inventori: create produk wajib `category_id` + baris `warehouse_stocks`.
+- Kasir memotong stok dari gudang penjualan (`is_sales_warehouse`) atau gudang per item.
+- Edit transaksi **tidak** mengubah item/qty/stok — koreksi barang = void lalu buat baru.
+- Void mengembalikan stok (`VOID_RESTORE`); error restore dilaporkan ke user.
+
+### Validasi ID (Zod)
+
+App memakai `dbId` / `dbIdSchema` di [`lib/validation.ts`](../lib/validation.ts): bentuk UUID Postgres `8-4-4-4-12`, **bukan** Zod 4 `.uuid()` yang RFC-strict (menolak seed ID lama dengan version/variant `0`). Seed baru (`seed_full_business_2_5y.sql`) memakai UUID versi `4` + variant `8`.
 
 Matriks akses:
 - OWNER: inventori + keuangan
@@ -30,3 +46,5 @@ Matriks akses:
 ### Reset data simulasi (QA)
 
 Untuk wipe data bisnis lalu seed ulang 2,5 tahun (semua fitur): jalankan `supabase/wipe_business_data.sql`, lalu `supabase/seed_full_business_2_5y.sql` (ganti `OWNER_UUID_HERE`). Checklist verifikasi: [`docs/qa-checklist.md`](./qa-checklist.md). Users & `store_settings` tidak dihapus.
+
+**Catatan:** re-seed dengan UUID baru tidak wajib jika data QA lama masih dipakai — validasi app sudah longgar. Re-seed hanya jika ingin ID seed RFC-compliant dari awal.

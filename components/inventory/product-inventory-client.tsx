@@ -184,7 +184,7 @@ export function ProductInventoryClient({
       return;
     }
     if (!form.category_id) {
-      toast.error("Pilih kategori dulu");
+      toast.error("Pilih kategori");
       return;
     }
     const initialQty = Math.max(0, Number(form.initial_qty) || 0);
@@ -512,6 +512,9 @@ export function ProductInventoryClient({
                 onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
+                <option value="" disabled>
+                  Pilih kategori
+                </option>
                 {initialCategories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -577,10 +580,10 @@ export function ProductInventoryClient({
             <p className="text-xs text-muted-foreground">Satuan: pcs</p>
           </div>
           <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none">
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
               Batal
             </Button>
-            <Button onClick={handleSubmit} disabled={busy}>
+            <Button type="button" onClick={handleSubmit} disabled={busy}>
               {editing ? "Simpan" : "Tambah"}
             </Button>
           </DialogFooter>

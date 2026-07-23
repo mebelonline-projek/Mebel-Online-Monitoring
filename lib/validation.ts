@@ -8,6 +8,25 @@ import { z } from "zod";
 
 // --- Common fields ---
 export const idSchema = z.string().min(1, "ID wajib diisi");
+
+/**
+ * UUID berbentuk Postgres (8-4-4-4-12 hex) — tidak RFC-strict.
+ * Zod 4 `.uuid()` menolak seed ID non-RFC (version/variant 0).
+ */
+const DB_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function dbId(message = "ID tidak valid") {
+  return z.string().regex(DB_UUID_RE, message);
+}
+
+export const dbIdSchema = dbId();
+
+/** Optional FK: kosong = null/skip */
+export function optionalDbId(message = "ID tidak valid") {
+  return dbId(message).optional().or(z.literal(""));
+}
+
 export const slugSchema = z
   .string()
   .min(1, "Slug wajib diisi")
@@ -47,8 +66,8 @@ export type ContactFormValues = z.infer<typeof contactFormSchema>;
 
 // --- Transaction ---
 export const transactionSchema = z.object({
-  customer_id: z.string().uuid().optional().or(z.literal("")),
-  product_id: z.string().uuid().optional().or(z.literal("")),
+  customer_id: optionalDbId(),
+  product_id: optionalDbId(),
   customer_name: z
     .string()
     .max(100, "Nama pelanggan maksimal 100 karakter")
@@ -64,7 +83,7 @@ export const transactionSchema = z.object({
   final_price: z.coerce.number().min(1, "Harga harus lebih dari 0").max(999_999_999, "Harga terlalu besar"),
   payment_type: z.enum(["CASH", "DP"], { error: "Pilih tipe pembayaran" }),
   payment_method: z.enum(["TUNAI", "TRANSFER"]).default("TUNAI"),
-  client_id: z.string().uuid().optional(),
+  client_id: dbId().optional(),
   dp_amount: z.coerce.number().min(0, "DP tidak boleh negatif").default(0),
 }).refine(
   (data) => {
@@ -83,12 +102,12 @@ export type TransactionFormValues = z.infer<typeof transactionSchema>;
 
 // --- Transaction line item (multi-produk) ---
 export const transactionItemSchema = z.object({
-  product_id: z.string().uuid().optional().or(z.literal("")),
+  product_id: optionalDbId(),
   product_name: z.string().min(1, "Nama produk wajib").max(200),
   quantity: z.coerce.number().min(1, "Min 1").max(999),
   unit_price: z.coerce.number().min(1, "Harga item harus lebih dari 0").max(999_999_999),
   note: z.string().max(300).optional().or(z.literal("")),
-  warehouse_id: z.string().uuid().optional().or(z.literal("")),
+  warehouse_id: optionalDbId(),
 });
 
 export type TransactionItemFormValues = z.infer<typeof transactionItemSchema>;
@@ -98,7 +117,7 @@ export const transactionCreateSchema = transactionSchema.extend({
 });
 
 export const fulfillmentUpdateSchema = z.object({
-  id: z.string().uuid(),
+  id: dbId(),
   fulfillment_status: z.enum(["MENUNGGU", "PRODUKSI", "SIAP_KIRIM", "SELESAI"]),
 });
 
@@ -143,12 +162,17 @@ export const customerSchema = z.object({
 
 export type CustomerFormValues = z.infer<typeof customerSchema>;
 
-// --- Product ---
+// --- Product (katalog; master + stok lewat inventori / category_id) ---
 export const productSchema = z.object({
   name: z.string().min(2, "Nama produk minimal 2 karakter").max(200, "Nama maksimal 200 karakter"),
-  category: z.string().max(100, "Kategori maksimal 100 karakter").optional().default("LAINNYA"),
+  category_id: z
+    .string()
+    .min(1, "Pilih kategori")
+    .regex(DB_UUID_RE, "ID kategori tidak valid"),
   description: z.string().max(500, "Deskripsi maksimal 500 karakter").optional().or(z.literal("")),
   base_price: z.coerce.number().min(0, "Harga tidak boleh negatif").max(999_999_999, "Harga terlalu besar"),
+  warehouse_id: optionalDbId("ID gudang tidak valid").nullable().optional(),
+  initial_qty: z.coerce.number().int().min(0).max(999_999).optional(),
 });
 
 export type ProductFormValues = z.infer<typeof productSchema>;

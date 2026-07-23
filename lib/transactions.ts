@@ -155,6 +155,38 @@ export async function createTransaction(
       return { success: false, message: "DP harus kurang dari harga final" };
     }
 
+    // Validasi gudang sebelum insert transaksi (hindari orphan)
+    let salesWhId: string | null = null;
+    if (data.items && data.items.length > 0) {
+      const catalogItems = data.items.filter(
+        (item) => item.product_id && item.product_id.length > 0
+      );
+      if (catalogItems.length > 0) {
+        const { data: salesWh } = await supabase
+          .from("warehouses")
+          .select("id")
+          .eq("is_sales_warehouse", true)
+          .eq("is_active", true)
+          .maybeSingle();
+        salesWhId = salesWh?.id || null;
+
+        for (const item of catalogItems) {
+          const wh =
+            item.warehouse_id && item.warehouse_id.length > 0
+              ? item.warehouse_id
+              : salesWhId;
+          if (!wh) {
+            return {
+              success: false,
+              message: salesWhId
+                ? `Pilih gudang untuk item "${item.product_name}".`
+                : "Belum ada gudang penjualan aktif. Set di menu Gudang, atau pilih gudang per item.",
+            };
+          }
+        }
+      }
+    }
+
     if (data.client_id) {
       const { data: existing } = await supabase
         .from("transactions")
@@ -197,18 +229,11 @@ export async function createTransaction(
     }
 
     if (data.items && data.items.length > 0) {
-      const { data: salesWh } = await supabase
-        .from("warehouses")
-        .select("id")
-        .eq("is_sales_warehouse", true)
-        .eq("is_active", true)
-        .maybeSingle();
-
       const rows = data.items.map((item, index) => {
         const wh =
           item.warehouse_id && item.warehouse_id.length > 0
             ? item.warehouse_id
-            : salesWh?.id || null;
+            : salesWhId;
         return {
           transaction_id: transaction.id,
           product_id: item.product_id && item.product_id.length > 0 ? item.product_id : null,
@@ -496,6 +521,16 @@ export async function updateTransaction(
       };
     }
 
+    // Edit tidak mengubah line items / stok (stok hanya di create + void).
+    // Item line di form edit sengaja tidak dikirim (lihat transaction-form: !isEdit).
+    if ("items" in formData && Array.isArray((formData as { items?: unknown }).items)) {
+      return {
+        success: false,
+        message:
+          "Edit item/qty tidak diizinkan setelah stok terpotong. Batalkan (void) lalu buat transaksi baru jika perlu koreksi barang.",
+      };
+    }
+
     const data = parsed.data;
     const isCash = data.payment_type === "CASH";
 
@@ -631,9 +666,20 @@ export async function voidTransaction(
     }
 
     try {
-      await restoreSaleStock(id, user.id);
-    } catch {
-      // Jangan gagalkan void jika inventori belum dimigrasi
+      const restore = await restoreSaleStock(id, user.id);
+      if (!restore.ok) {
+        return {
+          success: false,
+          message: `Transaksi dibatalkan, tapi stok gagal dikembalikan: ${restore.message}. Cek Mutasi / Stok.`,
+        };
+      }
+    } catch (e) {
+      return {
+        success: false,
+        message: `Transaksi dibatalkan, tapi stok gagal dikembalikan: ${
+          e instanceof Error ? e.message : "error restore"
+        }. Cek Mutasi / Stok.`,
+      };
     }
 
     await syncLinkedInvoiceTotals(supabase, [id]);
@@ -705,6 +751,15 @@ export async function deleteTransactionPermanent(
       return {
         success: false,
         message: `Transaksi ${existing.transaction_number} terikat ke ${invoiceLinks.length} invoice. Hapus invoice terkait terlebih dahulu.`,
+      };
+    }
+
+    // Kembalikan stok sebelum hapus (jika belum void / masih ada SALE)
+    const restore = await restoreSaleStock(id, user.id);
+    if (!restore.ok) {
+      return {
+        success: false,
+        message: `Tidak bisa hapus: stok gagal dikembalikan (${restore.message}). Void dulu atau cek Mutasi.`,
       };
     }
 

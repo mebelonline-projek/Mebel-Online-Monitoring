@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import type { ActionState } from "@/types/common";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { dbId } from "@/lib/validation";
 
 /** Admin client — untuk RPC apply_stock_change (hanya service_role). */
 function createAdminClient() {
@@ -82,7 +83,10 @@ const categorySchema = z.object({
 
 const inventoryProductBaseSchema = z.object({
   name: z.string().min(2, "Nama minimal 2 karakter").max(200),
-  category_id: z.string().uuid("Pilih kategori"),
+  category_id: z
+    .string()
+    .min(1, "Pilih kategori")
+    .pipe(dbId("ID kategori tidak valid")),
   base_price: z.coerce.number().min(0).max(999_999_999),
   min_stock: z.coerce.number().int().min(0).max(999_999),
   description: z.string().max(500).optional().or(z.literal("")),
@@ -90,16 +94,16 @@ const inventoryProductBaseSchema = z.object({
 
 /** Create: boleh isi gudang + stok awal */
 const inventoryProductCreateSchema = inventoryProductBaseSchema.extend({
-  warehouse_id: z.string().uuid().optional().nullable(),
+  warehouse_id: dbId("ID gudang tidak valid").optional().nullable().or(z.literal("")),
   initial_qty: z.coerce.number().int().min(0).max(999_999).optional(),
 });
 
 const movementSchema = z.object({
   type: z.enum(["IN", "OUT", "TRANSFER"]),
-  product_id: z.string().uuid(),
+  product_id: dbId("Pilih barang"),
   qty: z.coerce.number().int().min(1).max(999_999),
-  from_warehouse_id: z.string().uuid().optional().nullable(),
-  to_warehouse_id: z.string().uuid().optional().nullable(),
+  from_warehouse_id: dbId("Pilih gudang asal").optional().nullable().or(z.literal("")),
+  to_warehouse_id: dbId("Pilih gudang tujuan").optional().nullable().or(z.literal("")),
   note: z.string().max(500).optional().or(z.literal("")),
 });
 
@@ -693,29 +697,49 @@ export async function applySaleStock(params: {
 }
 
 /** Dipakai void: restore stok dari movement SALE transaksi. */
-export async function restoreSaleStock(transactionId: string, userId: string): Promise<void> {
-  const admin = createAdminClient();
-  const { data: sales } = await admin
-    .from("stock_movements")
-    .select("product_id, from_warehouse_id, qty")
-    .eq("reference_type", "transaction")
-    .eq("reference_id", transactionId)
-    .eq("type", "SALE");
+export async function restoreSaleStock(
+  transactionId: string,
+  userId: string
+): Promise<{ ok: true; restored: number } | { ok: false; message: string }> {
+  try {
+    const admin = createAdminClient();
+    const { data: sales, error: listErr } = await admin
+      .from("stock_movements")
+      .select("product_id, from_warehouse_id, qty")
+      .eq("reference_type", "transaction")
+      .eq("reference_id", transactionId)
+      .eq("type", "SALE");
 
-  if (!sales?.length) return;
+    if (listErr) return { ok: false, message: listErr.message };
+    if (!sales?.length) return { ok: true, restored: 0 };
 
-  for (const m of sales) {
-    if (!m.product_id || !m.from_warehouse_id) continue;
-    await admin.rpc("apply_stock_change", {
-      p_type: "VOID_RESTORE",
-      p_product_id: m.product_id,
-      p_qty: m.qty,
-      p_from_warehouse_id: null,
-      p_to_warehouse_id: m.from_warehouse_id,
-      p_note: "Restore void transaksi",
-      p_reference_type: "transaction",
-      p_reference_id: transactionId,
-      p_created_by: userId,
-    });
+    let restored = 0;
+    for (const m of sales) {
+      if (!m.product_id || !m.from_warehouse_id) continue;
+      const { error } = await admin.rpc("apply_stock_change", {
+        p_type: "VOID_RESTORE",
+        p_product_id: m.product_id,
+        p_qty: m.qty,
+        p_from_warehouse_id: null,
+        p_to_warehouse_id: m.from_warehouse_id,
+        p_note: "Restore void transaksi",
+        p_reference_type: "transaction",
+        p_reference_id: transactionId,
+        p_created_by: userId,
+      });
+      if (error) {
+        return {
+          ok: false,
+          message: `Gagal restore stok: ${error.message}`,
+        };
+      }
+      restored += 1;
+    }
+    return { ok: true, restored };
+  } catch (e) {
+    return {
+      ok: false,
+      message: e instanceof Error ? e.message : "Gagal restore stok",
+    };
   }
 }

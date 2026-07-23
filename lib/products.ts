@@ -2,6 +2,11 @@
 
 import { createServerSupabaseClient, getCurrentUser } from "@/lib/supabase-server";
 import { productSchema } from "@/lib/validation";
+import {
+  createInventoryProduct,
+  updateInventoryProduct,
+  deleteInventoryProduct,
+} from "@/lib/inventory";
 import { revalidateTag } from "next/cache";
 import { z } from "zod";
 import type { ActionState } from "@/types/common";
@@ -12,20 +17,23 @@ export interface ProductRow {
   id: string;
   name: string;
   category: string;
+  category_id?: string | null;
   description: string | null;
   base_price: number;
   created_at: string;
 }
 
+/** Delegasi ke inventori — wajib category_id + init warehouse_stocks. */
 export async function createProduct(
   formData: z.infer<typeof productSchema>
 ): Promise<ActionState<{ id: string }>> {
   try {
     const parsed = productSchema.safeParse(formData);
     if (!parsed.success) {
+      const msg = parsed.error.issues[0]?.message || "Validasi gagal";
       return {
         success: false,
-        message: "Validasi gagal",
+        message: msg,
         errors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
       };
     }
@@ -33,34 +41,18 @@ export async function createProduct(
     const user = await getCurrentUser();
     if (!user) return { success: false, message: "Anda harus login" };
 
-    const supabase = await createServerSupabaseClient();
-    const { data: profile } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
+    const result = await createInventoryProduct({
+      name: parsed.data.name,
+      category_id: parsed.data.category_id,
+      base_price: parsed.data.base_price,
+      min_stock: 0,
+      description: parsed.data.description || "",
+      warehouse_id: parsed.data.warehouse_id || null,
+      initial_qty: parsed.data.initial_qty ?? 0,
+    });
 
-    if (!profile || profile.role !== "OWNER") {
-      return { success: false, message: "Hanya Owner yang bisa menambah produk" };
-    }
-
-    const { data, error } = await supabase
-      .from("products")
-      .insert({
-        name: parsed.data.name,
-        category: parsed.data.category || "LAINNYA",
-        description: parsed.data.description || null,
-        base_price: parsed.data.base_price,
-        created_by: user.id,
-      })
-      .select("id")
-      .maybeSingle();
-
-    if (error) return { success: false, message: error.message };
-    if (!data) return { success: false, message: "Gagal menambahkan produk" };
-
-    revalidateTag(CACHE_TAG, { expire: 0 });
-    return { success: true, data: { id: data.id }, message: "Produk berhasil ditambahkan" };
+    if (result.success) revalidateTag(CACHE_TAG, { expire: 0 });
+    return result;
   } catch (error) {
     return {
       success: false,
@@ -76,9 +68,10 @@ export async function updateProduct(
   try {
     const parsed = productSchema.safeParse(formData);
     if (!parsed.success) {
+      const msg = parsed.error.issues[0]?.message || "Validasi gagal";
       return {
         success: false,
-        message: "Validasi gagal",
+        message: msg,
         errors: parsed.error.flatten().fieldErrors as Record<string, string[]>,
       };
     }
@@ -87,31 +80,22 @@ export async function updateProduct(
     if (!user) return { success: false, message: "Anda harus login" };
 
     const supabase = await createServerSupabaseClient();
-    const { data: profile } = await supabase
-      .from("users")
-      .select("role")
-      .eq("id", user.id)
+    const { data: existing } = await supabase
+      .from("products")
+      .select("min_stock")
+      .eq("id", id)
       .maybeSingle();
 
-    if (!profile || profile.role !== "OWNER") {
-      return { success: false, message: "Hanya Owner yang bisa mengubah produk" };
-    }
+    const result = await updateInventoryProduct(id, {
+      name: parsed.data.name,
+      category_id: parsed.data.category_id,
+      base_price: parsed.data.base_price,
+      min_stock: existing?.min_stock ?? 0,
+      description: parsed.data.description || "",
+    });
 
-    const { error } = await supabase
-      .from("products")
-      .update({
-        name: parsed.data.name,
-        category: parsed.data.category || "LAINNYA",
-        description: parsed.data.description || null,
-        base_price: parsed.data.base_price,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    if (error) return { success: false, message: error.message };
-
-    revalidateTag(CACHE_TAG, { expire: 0 });
-    return { success: true, message: "Produk berhasil diupdate" };
+    if (result.success) revalidateTag(CACHE_TAG, { expire: 0 });
+    return result;
   } catch (error) {
     return {
       success: false,
@@ -136,11 +120,10 @@ export async function deleteProduct(id: string): Promise<ActionState> {
       return { success: false, message: "Hanya Owner yang bisa menghapus produk" };
     }
 
-    const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) return { success: false, message: error.message };
-
-    revalidateTag(CACHE_TAG, { expire: 0 });
-    return { success: true, message: "Produk berhasil dihapus" };
+    // Sama aturan inventori: blok jika masih ada stok
+    const result = await deleteInventoryProduct(id);
+    if (result.success) revalidateTag(CACHE_TAG, { expire: 0 });
+    return result;
   } catch (error) {
     return {
       success: false,
@@ -164,7 +147,9 @@ export async function getProductsList(
 
   let query = supabase
     .from("products")
-    .select("id, name, category, description, base_price, created_at", { count: "exact" });
+    .select("id, name, category, category_id, description, base_price, created_at", {
+      count: "exact",
+    });
 
   if (q) {
     query = query.or(`name.ilike.%${q}%,category.ilike.%${q}%`);
@@ -190,7 +175,7 @@ export async function getProductsForPicker(): Promise<ProductRow[]> {
     const supabase = await createServerSupabaseClient();
     const { data, error } = await supabase
       .from("products")
-      .select("id, name, category, description, base_price, created_at")
+      .select("id, name, category, category_id, description, base_price, created_at")
       .order("name", { ascending: true })
       .limit(500);
 
