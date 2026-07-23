@@ -14,7 +14,6 @@ const nextConfig: NextConfig = {
     optimizePackageImports: [
       "lucide-react",
       "recharts",
-      "framer-motion",
     ],
     staleTimes: {
       dynamic: 120,

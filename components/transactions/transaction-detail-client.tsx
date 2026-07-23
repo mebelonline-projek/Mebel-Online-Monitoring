@@ -7,12 +7,13 @@
 // Owner: bisa void + hapus permanen. Karyawan: hanya lihat & edit.
 // ============================================================
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/formatters";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { FulfillmentBadge } from "@/components/shared/fulfillment-badge";
 import { FULFILLMENT_STATUSES } from "@/config/fulfillment";
+import { invalidateTransactionRelatedCaches } from "@/lib/use-cached-list";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -94,14 +95,12 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
   const isOwner = profileRole === "OWNER";
 
   // ⚡ Optimistic: baca sessionStorage saat mount — render instan tanpa fetch ulang
-  // Lazy initializer: hanya jalan sekali saat component pertama kali di-render
-  const [displayTransaction] = useState<TransactionDetail>(() => {
+  const [displayTransaction, setDisplayTransaction] = useState<TransactionDetail>(() => {
     try {
       const pending = sessionStorage.getItem("pending_trx");
       if (pending) {
         const parsed = JSON.parse(pending);
         if (parsed.id === transaction.id) {
-          // Hapus segera setelah dibaca — sekali pakai
           sessionStorage.removeItem("pending_trx");
           return {
             ...transaction,
@@ -127,6 +126,12 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
     transaction.fulfillment_status || "MENUNGGU"
   );
   const [isUpdatingFulfillment, setIsUpdatingFulfillment] = useState(false);
+
+  // Sync dari props setelah router.refresh() / navigasi dengan data baru (HPP, void, dll)
+  useEffect(() => {
+    setDisplayTransaction(transaction);
+    setFulfillmentStatus(transaction.fulfillment_status || "MENUNGGU");
+  }, [transaction]);
 
   const canEdit = displayTransaction.status === "DP";
   const canVoid = isOwner && displayTransaction.status !== "BATAL";
@@ -159,6 +164,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
       }
       setFulfillmentStatus(status);
       toast.success(result.message);
+      invalidateTransactionRelatedCaches();
       router.refresh();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
@@ -191,6 +197,7 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
 
       toast.success(result.message);
       setVoidDialogOpen(false);
+      invalidateTransactionRelatedCaches();
       router.refresh();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Gagal membatalkan transaksi");
@@ -213,7 +220,9 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
       }
 
       toast.success(result.message);
+      invalidateTransactionRelatedCaches();
       router.push("/transaksi");
+      router.refresh();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
       setIsDeleting(false);

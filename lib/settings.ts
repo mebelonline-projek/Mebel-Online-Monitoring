@@ -214,7 +214,11 @@ export async function resetLogo(): Promise<ActionState<null>> {
     const currentSettings = await getStoreSettings();
     const settingsId = currentSettings?.id || "";
 
-    if (currentSettings?.logo_url && !currentSettings.logo_url.includes("logo.svg")) {
+    if (
+      currentSettings?.logo_url &&
+      !currentSettings.logo_url.includes("logo.svg") &&
+      !currentSettings.logo_url.includes("logo.png")
+    ) {
       const oldPath = currentSettings.logo_url.split("/logos/").pop();
       if (oldPath) {
         await supabase.storage.from("logos").remove([oldPath]);
@@ -223,7 +227,7 @@ export async function resetLogo(): Promise<ActionState<null>> {
 
     await supabase.storage.from("logos").remove(["pwa/icon-192.png", "pwa/icon-512.png"]);
 
-    // Set logo_url ke null (frontend fallback ke /logo.svg)
+    // Set logo_url ke null (frontend fallback ke /logo.png)
     const { error: updateError } = await supabase
       .from("store_settings")
       .update({

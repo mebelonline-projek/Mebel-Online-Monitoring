@@ -1,6 +1,6 @@
 import sharp from "sharp";
 
-const BRAND_BG = { r: 128, g: 0, b: 0, alpha: 1 };
+const BRAND_BG = { r: 122, g: 31, b: 31, alpha: 1 }; // #7A1F1F maroon logo
 
 async function renderIcon(input: Buffer, size: number): Promise<Buffer> {
   const padding = Math.round(size * 0.14);

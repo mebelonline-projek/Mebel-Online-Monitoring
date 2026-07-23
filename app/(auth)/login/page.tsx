@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { siteConfig } from "@/config/site";
 import { StoreLogo } from "@/components/shared/store-logo";
-import { DEFAULT_LOGO } from "@/lib/store-logo";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -55,7 +54,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm glass-panel p-8 space-y-6">
         <div className="text-center space-y-3">
           <div className="flex justify-center">
-            <StoreLogo src={logoUrl} alt={storeName} size="lg" />
+            <StoreLogo src={logoUrl} alt={storeName} size="xl" className="shadow-lg" />
           </div>
           <h1 className="text-2xl font-bold font-serif text-primary dark:neon-title">
             {storeName}

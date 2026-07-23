@@ -23,6 +23,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Save, ArrowLeft } from "lucide-react";
 import { SearchablePicker } from "@/components/shared/searchable-picker";
+import { invalidateTransactionRelatedCaches } from "@/lib/use-cached-list";
 import type { CustomerRow } from "@/lib/customers";
 import type { ProductRow } from "@/lib/products";
 
@@ -192,7 +193,9 @@ export function TransactionForm({
         }
 
         toast.success(result.message);
+        invalidateTransactionRelatedCaches();
         router.push(`/transaksi/${transactionId}`);
+        router.refresh();
       } else {
         if (!navigator.onLine) {
           const { queueOfflineTransaction } = await import("@/lib/offline-sync");
@@ -260,6 +263,8 @@ export function TransactionForm({
         }
 
         router.push(`/transaksi/${result.data.id}`);
+        invalidateTransactionRelatedCaches();
+        router.refresh();
       }
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");

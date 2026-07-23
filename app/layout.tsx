@@ -27,6 +27,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#7A1F1F" },
+    { media: "(prefers-color-scheme: dark)", color: "#7A1F1F" },
+  ],
 };
 
 export const metadata: Metadata = {
@@ -40,18 +44,20 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   icons: {
     icon: [
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-48.png", sizes: "48x48", type: "image/png" },
       { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
-      { url: "/icons/icon-192.svg", type: "image/svg+xml" },
     ],
-    apple: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
   other: {
     "mobile-web-app-capable": "yes",
     "apple-mobile-web-app-capable": "yes",
     "apple-mobile-web-app-status-bar-style": "black-translucent",
     "apple-mobile-web-app-title": siteConfig.shortName,
-    "msapplication-TileColor": "#800000",
+    "msapplication-TileColor": "#7A1F1F",
+    "msapplication-TileImage": "/icons/icon-192.png",
   },
 };
 

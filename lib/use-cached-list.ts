@@ -17,7 +17,17 @@ export function invalidateListCache(prefix: string): void {
   }
 }
 
-export function useCachedList<T>(key: string, fetcher: () => Promise<T>) {
+/** Invalidate list transaksi + piutang setelah mutasi yang mengubah status/uang/HPP. */
+export function invalidateTransactionRelatedCaches(): void {
+  invalidateListCache("transactions:");
+  invalidateListCache("piutang:");
+}
+
+export function seedListCache<T>(key: string, data: T): void {
+  memory.set(key, { data, ts: Date.now() });
+}
+
+export function useCachedList<T>(key: string, fetcher: () => Promise<T>, initialData?: T) {
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
 
@@ -31,8 +41,20 @@ export function useCachedList<T>(key: string, fetcher: () => Promise<T>) {
     return hit.data as T;
   };
 
-  const [data, setData] = useState<T | null>(() => readCache());
-  const [loading, setLoading] = useState(() => readCache() === null);
+  const [data, setData] = useState<T | null>(() => {
+    const cached = readCache();
+    if (cached) return cached;
+    if (initialData !== undefined) {
+      memory.set(key, { data: initialData, ts: Date.now() });
+      return initialData;
+    }
+    return null;
+  });
+  const [loading, setLoading] = useState(() => {
+    if (readCache() !== null) return false;
+    if (initialData !== undefined) return false;
+    return true;
+  });
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
@@ -60,16 +82,18 @@ export function useCachedList<T>(key: string, fetcher: () => Promise<T>) {
         apply(next);
       } catch (err) {
         if (cancelled) return;
-        if (!cached) {
+        if (!cached && initialData === undefined) {
           setError(err instanceof Error ? err.message : "Gagal memuat data");
           setLoading(false);
         }
       }
     };
 
-    if (cached) {
-      setData(cached);
-      setLoading(false);
+    if (cached || initialData !== undefined) {
+      if (cached) {
+        setData(cached);
+        setLoading(false);
+      }
       load(true);
     } else {
       load(false);

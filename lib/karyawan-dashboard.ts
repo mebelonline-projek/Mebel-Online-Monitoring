@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
-import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { createClient } from "@supabase/supabase-js";
+import { getCurrentUser, getUserProfile } from "@/lib/supabase-server";
 import { getWibDayBounds } from "@/lib/date-utils";
 
 export interface KaryawanDashboardData {
@@ -24,9 +25,22 @@ export interface KaryawanDashboardData {
   completedCount: number;
 }
 
-export const getKaryawanDashboardData = unstable_cache(
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "[Supabase Admin] NEXT_PUBLIC_SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY wajib diset."
+    );
+  }
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+const getCachedKaryawanDashboardData = unstable_cache(
   async (): Promise<KaryawanDashboardData> => {
-    const supabase = await createServerSupabaseClient();
+    const supabase = createAdminClient();
     const { start: todayStart, end: todayEnd } = getWibDayBounds();
 
     const [
@@ -79,3 +93,16 @@ export const getKaryawanDashboardData = unstable_cache(
   ["karyawan-dashboard"],
   { revalidate: 30, tags: ["transactions", "dashboard"] }
 );
+
+/** Auth di luar cache; agregat store-wide di dalam cache. */
+export async function getKaryawanDashboardData(): Promise<KaryawanDashboardData> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Anda harus login");
+
+  const profile = await getUserProfile();
+  if (!profile || (profile.role !== "KARYAWAN" && profile.role !== "OWNER")) {
+    throw new Error("Akses dashboard ditolak");
+  }
+
+  return getCachedKaryawanDashboardData();
+}

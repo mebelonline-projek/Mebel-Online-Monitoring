@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { getTransactionsPageData } from "@/lib/transactions";
 import { TransactionListPageClient } from "@/components/transactions/transaction-list-page-client";
 
 function TransactionListFallback() {
@@ -10,10 +11,45 @@ function TransactionListFallback() {
   );
 }
 
-export default function TransaksiPage() {
+interface PageProps {
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    fulfillment?: string;
+    page?: string;
+  }>;
+}
+
+async function TransaksiPageContent({ searchParams }: PageProps) {
+  const params = await searchParams;
+  const q = params.q || "";
+  const status = params.status || "semua";
+  const fulfillment = params.fulfillment || "semua";
+  const page = Math.max(1, parseInt(params.page || "1", 10) || 1);
+
+  const initialData = await getTransactionsPageData({
+    q,
+    status,
+    fulfillment,
+    page,
+    limit: 10,
+  });
+
+  return (
+    <TransactionListPageClient
+      initialData={initialData}
+      initialQ={q}
+      initialStatus={status}
+      initialFulfillment={fulfillment}
+      initialPage={page}
+    />
+  );
+}
+
+export default function TransaksiPage({ searchParams }: PageProps) {
   return (
     <Suspense fallback={<TransactionListFallback />}>
-      <TransactionListPageClient />
+      <TransaksiPageContent searchParams={searchParams} />
     </Suspense>
   );
 }

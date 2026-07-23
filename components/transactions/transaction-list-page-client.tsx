@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { TransactionListClient } from "@/components/transactions/transaction-list-client";
 import { useProfile } from "@/components/providers/profile-context";
-import { invalidateListCache, syncListUrl, useCachedList } from "@/lib/use-cached-list";
+import { invalidateTransactionRelatedCaches, syncListUrl, useCachedList } from "@/lib/use-cached-list";
 
 interface TransactionListResponse {
   transactions: Array<{
@@ -57,13 +57,29 @@ async function fetchTransactions(
   return json;
 }
 
-export function TransactionListPageClient() {
+export function TransactionListPageClient({
+  initialData,
+  initialQ = "",
+  initialStatus = "semua",
+  initialFulfillment = "semua",
+  initialPage = 1,
+}: {
+  initialData?: TransactionListResponse;
+  initialQ?: string;
+  initialStatus?: string;
+  initialFulfillment?: string;
+  initialPage?: number;
+}) {
   const profile = useProfile();
   const searchParams = useSearchParams();
-  const [q, setQ] = useState(() => searchParams.get("q") || "");
-  const [status, setStatus] = useState(() => searchParams.get("status") || "semua");
-  const [fulfillment, setFulfillment] = useState(() => searchParams.get("fulfillment") || "semua");
-  const [page, setPage] = useState(() => parseInt(searchParams.get("page") || "1", 10));
+  const [q, setQ] = useState(() => searchParams.get("q") || initialQ);
+  const [status, setStatus] = useState(() => searchParams.get("status") || initialStatus);
+  const [fulfillment, setFulfillment] = useState(
+    () => searchParams.get("fulfillment") || initialFulfillment
+  );
+  const [page, setPage] = useState(
+    () => parseInt(searchParams.get("page") || String(initialPage), 10)
+  );
 
   useEffect(() => {
     setQ(searchParams.get("q") || "");
@@ -77,7 +93,19 @@ export function TransactionListPageClient() {
     () => fetchTransactions(q, status, fulfillment, page),
     [q, status, fulfillment, page]
   );
-  const { data, loading, error } = useCachedList(cacheKey, fetcher);
+
+  const seedMatches =
+    initialData &&
+    q === initialQ &&
+    status === initialStatus &&
+    fulfillment === initialFulfillment &&
+    page === initialPage;
+
+  const { data, loading, error } = useCachedList(
+    cacheKey,
+    fetcher,
+    seedMatches ? initialData : undefined
+  );
 
   const sync = useCallback(
     (next: { q?: string; status?: string; fulfillment?: string; page?: number }) => {
@@ -129,5 +157,5 @@ export function TransactionListPageClient() {
 }
 
 export function invalidateTransactionListCache() {
-  invalidateListCache("transactions:");
+  invalidateTransactionRelatedCaches();
 }

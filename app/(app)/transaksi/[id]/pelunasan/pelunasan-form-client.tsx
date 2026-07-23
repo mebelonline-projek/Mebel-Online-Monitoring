@@ -10,6 +10,7 @@ import { formatCurrency, formatDate } from "@/lib/formatters";
 import { paymentSchema } from "@/lib/validation";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "sonner";
+import { invalidateTransactionRelatedCaches } from "@/lib/use-cached-list";
 
 interface PaymentRecord {
   id: string;
@@ -97,6 +98,7 @@ export function PelunasanFormClient({
       }
 
       toast.success(result.message);
+      invalidateTransactionRelatedCaches();
       router.push(`/transaksi/${transactionId}`);
       router.refresh();
     } catch (error: unknown) {

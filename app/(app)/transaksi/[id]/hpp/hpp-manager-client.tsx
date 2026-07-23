@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/formatters";
 import { hppItemSchema } from "@/lib/validation";
+import { invalidateTransactionRelatedCaches } from "@/lib/use-cached-list";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +61,7 @@ export function HppManagerClient({
   const isBatal = transactionStatus === "BATAL";
 
   const [items, setItems] = useState<HppItem[]>(initialItems);
+  const [dirty, setDirty] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", amount: "", note: "" });
@@ -68,6 +70,21 @@ export function HppManagerClient({
   const [deleteTarget, setDeleteTarget] = useState<HppItem | null>(null);
 
   const totalHpp = items.reduce((sum, item) => sum + item.amount, 0);
+
+  const goBackToDetail = () => {
+    if (dirty) {
+      invalidateTransactionRelatedCaches();
+      router.push(`/transaksi/${transactionId}`);
+      router.refresh();
+    } else {
+      router.back();
+    }
+  };
+
+  const afterMutation = () => {
+    setDirty(true);
+    invalidateTransactionRelatedCaches();
+  };
 
   const resetForm = () => {
     setForm({ name: "", amount: "", note: "" });
@@ -146,6 +163,7 @@ export function HppManagerClient({
         }
         toast.success(result.message);
       }
+      afterMutation();
       resetForm();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
@@ -168,6 +186,7 @@ export function HppManagerClient({
       setItems((prev) => prev.filter((item) => item.id !== deleteTarget.id));
       toast.success(result.message);
       setDeleteTarget(null);
+      afterMutation();
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : "Gagal menghapus HPP");
     }
@@ -175,11 +194,10 @@ export function HppManagerClient({
 
   return (
     <div className="space-y-6 p-4 md:p-6 lg:p-8">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Button variant="outline" size="sm" onClick={() => router.back()} className="gap-1">
+            <Button variant="outline" size="sm" onClick={goBackToDetail} className="gap-1">
               <ArrowLeft className="w-3.5 h-3.5" />
               Kembali
             </Button>
@@ -189,7 +207,6 @@ export function HppManagerClient({
         </div>
       </div>
 
-      {/* Total HPP Card */}
       <Card className="shadow-sm">
         <CardContent className="p-4 flex items-center justify-between">
           <div>
@@ -216,7 +233,6 @@ export function HppManagerClient({
         </CardContent>
       </Card>
 
-      {/* Add/Edit Form */}
       {showForm && !isBatal && (
         <Card className="shadow-sm">
           <CardContent className="p-6">
@@ -273,7 +289,6 @@ export function HppManagerClient({
         </Card>
       )}
 
-      {/* HPP Items List */}
       {items.length === 0 ? (
         <Card className="shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16 text-center">
@@ -364,7 +379,6 @@ export function HppManagerClient({
             </Table>
           </div>
 
-          {/* Total Footer */}
           <div className="p-4 bg-accent/30 border-t border-border flex justify-between items-center">
             <span className="font-bold">Total HPP:</span>
             <span className="text-xl font-bold text-primary">{formatCurrency(totalHpp)}</span>
@@ -373,7 +387,6 @@ export function HppManagerClient({
         </>
       )}
 
-      {/* Delete Alert */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>

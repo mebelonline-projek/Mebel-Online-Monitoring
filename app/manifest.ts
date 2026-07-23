@@ -1,7 +1,11 @@
 import type { MetadataRoute } from "next";
 import { siteConfig } from "@/config/site";
-import { getPwaIconUrls } from "@/lib/store-logo";
+import { getPwaIconUrls, PWA_ICON_PATHS } from "@/lib/store-logo";
 import { getStoreSettings } from "@/lib/store-queries";
+
+/** Maroon brand + cream dari logo aplikasi */
+const THEME_COLOR = "#7A1F1F";
+const BACKGROUND_COLOR = "#F7F1E8";
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const settings = await getStoreSettings();
@@ -14,8 +18,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     description: siteConfig.description,
     start_url: "/kasir",
     display: "standalone",
-    background_color: "#1a1a2e",
-    theme_color: "#800000",
+    background_color: BACKGROUND_COLOR,
+    theme_color: THEME_COLOR,
     orientation: "any",
     icons: [
       {
@@ -31,9 +35,16 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
         purpose: "any",
       },
       {
-        src: "/icons/icon-192.svg",
-        sizes: "192x192",
-        type: "image/svg+xml",
+        src: icons.icon512,
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "maskable",
+      },
+      {
+        src: PWA_ICON_PATHS.apple,
+        sizes: "180x180",
+        type: "image/png",
+        purpose: "any",
       },
     ],
     shortcuts: [

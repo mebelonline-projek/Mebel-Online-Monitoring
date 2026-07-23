@@ -9,7 +9,7 @@ const SIZE_CLASS = {
   sm: "w-10 h-10",
   md: "w-14 h-14",
   lg: "w-20 h-20",
-  xl: "w-32 h-32",
+  xl: "w-28 h-28",
 } as const;
 
 const RADIUS_CLASS = {
@@ -17,7 +17,7 @@ const RADIUS_CLASS = {
   sm: "rounded-xl",
   md: "rounded-xl",
   lg: "rounded-2xl",
-  xl: "rounded-2xl",
+  xl: "rounded-3xl",
 } as const;
 
 type StoreLogoSize = keyof typeof SIZE_CLASS;
@@ -47,12 +47,15 @@ export function StoreLogo({
   }, [src]);
 
   const resolved = failed ? DEFAULT_LOGO : imgSrc;
-  const isDefaultSvg = resolved === DEFAULT_LOGO;
+  const isBrandDefault = resolved === DEFAULT_LOGO || resolved.startsWith("/logo.");
 
+  // Brand icon sudah punya desain full-bleed — frame ringan saja
   const frameClass =
     variant === "print"
-      ? "border border-gray-200 bg-gray-50 shadow-sm"
-      : "border-2 border-primary/25 bg-gradient-to-br from-background via-muted/30 to-primary/5 shadow-md ring-1 ring-primary/10 dark:from-sidebar-accent/20 dark:to-primary/10";
+      ? "border border-gray-200 bg-white shadow-sm"
+      : isBrandDefault
+        ? "shadow-md ring-1 ring-primary/20 dark:ring-primary/30"
+        : "border-2 border-primary/25 bg-gradient-to-br from-background via-muted/30 to-primary/5 shadow-md ring-1 ring-primary/10 dark:from-sidebar-accent/20 dark:to-primary/10";
 
   return (
     <div
@@ -69,8 +72,8 @@ export function StoreLogo({
         src={resolved}
         alt={alt}
         className={cn(
-          "h-full w-full",
-          isDefaultSvg ? "object-contain p-1" : "object-cover"
+          "h-full w-full object-cover",
+          !isBrandDefault && variant === "print" && "object-contain p-1"
         )}
         onError={() => {
           if (!failed) {

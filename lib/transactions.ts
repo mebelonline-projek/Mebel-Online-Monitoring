@@ -8,8 +8,8 @@
 
 import { z } from "zod";
 import { createClient } from "@supabase/supabase-js";
-import { unstable_cache, revalidateTag } from "next/cache";
-import { createServerSupabaseClient, getCurrentUser } from "@/lib/supabase-server";
+import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
+import { createServerSupabaseClient, getCurrentUser, getUserProfile } from "@/lib/supabase-server";
 import { transactionSchema, transactionCreateSchema, hppItemSchema, paymentSchema, fulfillmentUpdateSchema } from "@/lib/validation";
 import {
   addWibDays,
@@ -754,8 +754,10 @@ export async function addHppItem(
       return { success: false, message: "Gagal menambahkan item HPP" };
     }
 
-    // Invalidate cache — HPP mempengaruhi dashboard
+    // Invalidate cache — HPP mempengaruhi dashboard + detail transaksi
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidatePath(`/transaksi/${parsed.data.transaction_id}`);
 
     return {
       success: true,
@@ -791,7 +793,7 @@ export async function updateHppItem(
 
     const { data: existing, error: checkError } = await supabase
       .from("hpp_items")
-      .select("id")
+      .select("id, transaction_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -817,6 +819,8 @@ export async function updateHppItem(
     }
 
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidatePath(`/transaksi/${existing.transaction_id}`);
 
     return {
       success: true,
@@ -837,6 +841,20 @@ export async function deleteHppItem(id: string): Promise<ActionState> {
 
     const supabase = await createServerSupabaseClient();
 
+    const { data: existing, error: checkError } = await supabase
+      .from("hpp_items")
+      .select("id, transaction_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (checkError) {
+      return { success: false, message: checkError.message };
+    }
+
+    if (!existing) {
+      return { success: false, message: "Item HPP tidak ditemukan" };
+    }
+
     const { error } = await supabase
       .from("hpp_items")
       .delete()
@@ -847,6 +865,8 @@ export async function deleteHppItem(id: string): Promise<ActionState> {
     }
 
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
+    revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidatePath(`/transaksi/${existing.transaction_id}`);
 
     return {
       success: true,
@@ -1417,40 +1437,48 @@ function fmtDateOnly(d: Date): string {
   return getWibDateString(d);
 }
 
-// ── Batch: ambil semua data chart dalam 3-4 query ──
+// ── Batch: ambil data chart (paralel, lalu HPP setelah ID transaksi) ──
 async function fetchChartRawData(
-  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   chartStart: Date,
   chartEnd: Date
 ) {
-  const { data: allPayments } = await supabase
-    .from("transaction_payments")
-    .select("amount, transaction_id, payment_date, transactions!inner(status)")
-    .gte("payment_date", fmtDateISO(chartStart))
-    .lte("payment_date", fmtDateISO(chartEnd));
+  const [paymentsRes, txRes, opCostsRes] = await Promise.all([
+    supabase
+      .from("transaction_payments")
+      .select("amount, transaction_id, payment_date, transactions!inner(status)")
+      .gte("payment_date", fmtDateISO(chartStart))
+      .lte("payment_date", fmtDateISO(chartEnd)),
+    supabase
+      .from("transactions")
+      .select("id, status, created_at")
+      .gte("created_at", fmtDateISO(chartStart))
+      .lte("created_at", fmtDateISO(chartEnd)),
+    supabase
+      .from("operational_costs")
+      .select("amount, period_start, period_end")
+      .lte("period_start", fmtDateOnly(chartEnd))
+      .gte("period_end", fmtDateOnly(chartStart)),
+  ]);
 
-  const { data: allTx } = await supabase
-    .from("transactions")
-    .select("id, status, created_at")
-    .gte("created_at", fmtDateISO(chartStart))
-    .lte("created_at", fmtDateISO(chartEnd));
+  const allTx = txRes.data || [];
+  const validTxIds = allTx.filter((t) => t.status !== "BATAL").map((t) => t.id);
+  const allHpp =
+    validTxIds.length > 0
+      ? (
+          await supabase
+            .from("hpp_items")
+            .select("amount, transaction_id")
+            .in("transaction_id", validTxIds)
+        ).data || []
+      : [];
 
-  const validTxIds = (allTx || []).filter((t) => t.status !== "BATAL").map((t) => t.id);
-  const allHpp = validTxIds.length > 0
-    ? ((await supabase
-        .from("hpp_items")
-        .select("amount, transaction_id")
-        .in("transaction_id", validTxIds)
-      ).data || [])
-    : [];
-
-  const { data: allOpCosts } = await supabase
-    .from("operational_costs")
-    .select("amount, period_start, period_end")
-    .lte("period_start", fmtDateOnly(chartEnd))
-    .gte("period_end", fmtDateOnly(chartStart));
-
-  return { allPayments: allPayments || [], allTx: allTx || [], allHpp, allOpCosts: allOpCosts || [] };
+  return {
+    allPayments: paymentsRes.data || [],
+    allTx,
+    allHpp,
+    allOpCosts: opCostsRes.data || [],
+  };
 }
 
 // ── Aggregate pure JS (no DB calls) ──
@@ -1535,9 +1563,9 @@ function computePeriodStat(
   return { revenue, hpp, grossProfit, operationalCosts, netProfit, netMargin, txCount };
 }
 
-// ── Core dashboard logic (tanpa Supabase client di wrapper) ──
+// ── Core dashboard logic — admin client (tanpa cookies) agar unstable_cache efektif ──
 async function computeDashboardStats(period: PeriodType): Promise<DashboardStats> {
-  const supabase = await createServerSupabaseClient();
+  const supabase = createAdminClient();
   const today = getWibDateString();
 
   const { kpiStart, kpiEnd, prevStart, prevEnd, chartStart, chartEnd } =
@@ -1671,12 +1699,25 @@ async function computeDashboardStats(period: PeriodType): Promise<DashboardStats
   };
 }
 
-// ⚡ Cached wrapper — 5 menit TTL, invalidasi via revalidateTag("dashboard")
-export const getDashboardStats = unstable_cache(
+// ⚡ Cached compute — admin client (tanpa cookies). Auth/role WAJIB di luar ini.
+const getCachedDashboardStats = unstable_cache(
   computeDashboardStats,
   ["dashboard-stats"],
   { revalidate: 300, tags: [CACHE_TAGS.dashboard] }
 );
+
+/** Owner-only entry: cek auth di luar cache, baca agregat via cache. */
+export async function getDashboardStats(period: PeriodType): Promise<DashboardStats> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Anda harus login");
+
+  const profile = await getUserProfile();
+  if (!profile || profile.role !== "OWNER") {
+    throw new Error("Hanya Owner yang bisa melihat dashboard");
+  }
+
+  return getCachedDashboardStats(period);
+}
 
 // ============================================================
 // ⚡ TRANSAKSI PAGE DATA — Cached: data + status counts dalam 1 fungsi
@@ -1727,6 +1768,7 @@ export async function getTransactionsPageData(
     { count: batalCount },
   ] = await Promise.all([
     txQuery.order("created_at", { ascending: false }).range(offset, offset + limit - 1),
+    // Count exact per status (paralel) — aman di atas batas row PostgREST
     supabase.from("transactions").select("*", { count: "exact", head: true }).eq("status", "LUNAS"),
     supabase.from("transactions").select("*", { count: "exact", head: true }).eq("status", "DP"),
     supabase
