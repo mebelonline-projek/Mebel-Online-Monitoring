@@ -4,7 +4,8 @@ Jalankan file SQL berikut di **Supabase SQL Editor** (urut):
 
 1. [`supabase/migrate_inventory.sql`](../supabase/migrate_inventory.sql)
 2. [`supabase/fix_inventory_linter.sql`](../supabase/fix_inventory_linter.sql) — wajib jika migrasi sudah dijalankan sebelum harden keamanan
-3. (opsional) [`supabase/fix_product_photos_no_size_limit.sql`](../supabase/fix_product_photos_no_size_limit.sql)
+3. (opsional) [`supabase/fix_create_user_profile_gudang.sql`](../supabase/fix_create_user_profile_gudang.sql) — izinkan role GUDANG di RPC profil + pastikan CHECK constraint
+4. (opsional) [`supabase/fix_product_photos_no_size_limit.sql`](../supabase/fix_product_photos_no_size_limit.sql)
 
 Isi migrasi:
 - Role `GUDANG` pada `users.role`

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createUser, updateUser, deleteUser, type UserRow } from "@/lib/users";
+import type { UserRow } from "@/lib/users";
 import { formatDate } from "@/lib/formatters";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -82,38 +82,50 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      if (editingUser) {
-        const result = await updateUser(editingUser.id, {
-          name: form.name,
-          role: form.role,
-          password: form.password.trim() || undefined,
-        });
-        if (!result.success) {
-          toast.error(result.message);
-        } else {
-          toast.success(result.message);
-          setDialogOpen(false);
-          resetForm();
-          router.refresh();
-        }
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          editingUser
+            ? {
+                action: "update",
+                id: editingUser.id,
+                name: form.name,
+                role: form.role,
+                password: form.password.trim() || undefined,
+              }
+            : {
+                action: "create",
+                email: form.email,
+                password: form.password,
+                name: form.name,
+                role: form.role,
+              }
+        ),
+      });
+
+      let result: { success: boolean; message?: string };
+      try {
+        result = await res.json();
+      } catch {
+        toast.error(
+          res.ok
+            ? "Respons server tidak valid"
+            : `Gagal menyimpan (HTTP ${res.status}). Coba lagi.`
+        );
+        return;
+      }
+
+      if (!result.success) {
+        toast.error(result.message || "Gagal menyimpan user");
       } else {
-        const result = await createUser({
-          email: form.email,
-          password: form.password,
-          name: form.name,
-          role: form.role,
-        });
-        if (!result.success) {
-          toast.error(result.message);
-        } else {
-          toast.success(result.message);
-          setDialogOpen(false);
-          resetForm();
-          router.refresh();
-        }
+        toast.success(result.message || "Berhasil");
+        setDialogOpen(false);
+        resetForm();
+        router.refresh();
       }
     } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Terjadi kesalahan");
+      toast.error(error instanceof Error ? error.message : "Terjadi kesalahan jaringan");
     } finally {
       setIsSubmitting(false);
     }
@@ -123,11 +135,22 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
     if (!deletingUser) return;
     setIsDeleting(true);
     try {
-      const result = await deleteUser(deletingUser.id);
+      const res = await fetch("/api/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: deletingUser.id }),
+      });
+      let result: { success: boolean; message?: string };
+      try {
+        result = await res.json();
+      } catch {
+        toast.error(`Gagal menghapus (HTTP ${res.status})`);
+        return;
+      }
       if (!result.success) {
-        toast.error(result.message);
+        toast.error(result.message || "Gagal menghapus");
       } else {
-        toast.success(result.message);
+        toast.success(result.message || "User dihapus");
         setDeleteDialogOpen(false);
         setDeletingUser(null);
         router.refresh();

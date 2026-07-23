@@ -20,8 +20,13 @@ export interface UserRow {
 // Helper: Buat admin Supabase client (pakai service_role key)
 // ============================================================
 function createAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_URL belum diset di environment."
+    );
+  }
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
@@ -122,6 +127,7 @@ export async function createUser(formData: {
 // ============================================================
 // UPDATE — Update nama/role/password user (Owner only)
 // Password opsional: isi jika Owner mau reset sandi karyawan/gudang.
+// Auth: password dan user_metadata dipisah (hindari error GoTrue).
 // ============================================================
 export async function updateUser(
   id: string,
@@ -178,33 +184,52 @@ export async function updateUser(
       return { success: false, message: "Tidak bisa mengubah akun Owner lain" };
     }
 
+    const name = formData.name.trim();
+    const role = formData.role;
+
     const { error } = await adminClient
       .from("users")
-      .update({ name: formData.name.trim(), role: formData.role })
+      .update({ name, role })
       .eq("id", id);
 
-    if (error) return { success: false, message: error.message };
-
-    // Sync Auth: metadata role/nama + password opsional (reset sandi)
-    const authUpdate: {
-      user_metadata: { name: string; role: string };
-      password?: string;
-    } = {
-      user_metadata: { name: formData.name.trim(), role: formData.role },
-    };
-    if (password) {
-      authUpdate.password = password;
+    if (error) {
+      const hint =
+        error.message.includes("users_role_check") || error.message.includes("GUDANG")
+          ? " Role GUDANG belum aktif di DB — jalankan supabase/migrate_inventory.sql."
+          : "";
+      return { success: false, message: `${error.message}.${hint}` };
     }
 
-    const { error: authError } = await adminClient.auth.admin.updateUserById(id, authUpdate);
-    if (authError) {
+    // 1) Metadata saja — JANGAN kirim top-level `role` (itu JWT role Auth, bukan app role)
+    const { error: metaError } = await adminClient.auth.admin.updateUserById(id, {
+      user_metadata: { name, role },
+    });
+    if (metaError) {
       return {
         success: false,
-        message: `Profil tersimpan, tapi gagal update Auth: ${authError.message}`,
+        message: `Profil tersimpan, tapi gagal sync Auth metadata: ${metaError.message}`,
       };
     }
 
-    revalidatePath("/pengaturan/user");
+    // 2) Password terpisah — mengurangi kegagalan GoTrue pada user GUDANG
+    if (password) {
+      const { error: pwError } = await adminClient.auth.admin.updateUserById(id, {
+        password,
+      });
+      if (pwError) {
+        return {
+          success: false,
+          message: `Profil tersimpan, tapi gagal ganti password: ${pwError.message}`,
+        };
+      }
+    }
+
+    try {
+      revalidatePath("/pengaturan/user");
+    } catch {
+      // Jangan gagalkan update jika revalidate bermasalah
+    }
+
     return {
       success: true,
       message: password
@@ -212,10 +237,13 @@ export async function updateUser(
         : "User berhasil diupdate",
     };
   } catch (error) {
-    return {
-      success: false,
-      message: error instanceof Error ? error.message : "Terjadi kesalahan",
-    };
+    const msg =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : "Terjadi kesalahan saat update user";
+    return { success: false, message: msg };
   }
 }
 
