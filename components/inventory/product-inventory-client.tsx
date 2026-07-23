@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   createInventoryProduct,
@@ -139,6 +139,13 @@ export function ProductInventoryClient({
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Kompres dimulai saat foto dipilih, supaya Simpan tidak menunggu. */
+  const photoCompressRef = useRef<Promise<File> | null>(null);
+
+  const pickPhoto = (file: File | null) => {
+    setPhotoFile(file);
+    photoCompressRef.current = file ? compressPhotoForUpload(file) : null;
+  };
 
   useEffect(() => {
     if (!photoFile) {
@@ -180,7 +187,7 @@ export function ProductInventoryClient({
       return;
     }
     setEditing(null);
-    setPhotoFile(null);
+    pickPhoto(null);
     setForm({
       name: "",
       category_id: initialCategories[0]?.id || "",
@@ -195,7 +202,7 @@ export function ProductInventoryClient({
 
   const openEdit = (p: InventoryProductRow) => {
     setEditing(p);
-    setPhotoFile(null);
+    pickPhoto(null);
     setForm({
       name: p.name,
       category_id: p.category_id || initialCategories[0]?.id || "",
@@ -206,6 +213,40 @@ export function ProductInventoryClient({
       initial_qty: "0",
     });
     setDialogOpen(true);
+  };
+
+  /** Kompres + upload foto di background — tidak menahan tombol Simpan. */
+  const uploadPhotoInBackground = (
+    productId: string,
+    file: File,
+    compressPromise: Promise<File> | null
+  ) => {
+    const toastId = toast.loading("Mengunggah foto...");
+    void (async () => {
+      try {
+        const compressed = await (compressPromise ?? compressPhotoForUpload(file));
+        if (compressed.size > MAX_UPLOAD_BYTES) {
+          toast.error(
+            `Foto terlalu besar (${Math.round(compressed.size / 1024 / 1024)}MB). Edit barang & pilih foto lebih kecil.`,
+            { id: toastId }
+          );
+          return;
+        }
+        const fd = new FormData();
+        fd.append("file", compressed);
+        const up = await uploadProductPhoto(productId, fd);
+        if (!up.success) {
+          toast.error(up.message, { id: toastId });
+          return;
+        }
+        toast.success("Foto tersimpan", { id: toastId });
+        router.refresh();
+      } catch {
+        toast.error("Gagal mengunggah foto. Coba edit barang lalu pilih ulang.", {
+          id: toastId,
+        });
+      }
+    })();
   };
 
   const handleSubmit = async () => {
@@ -223,21 +264,9 @@ export function ProductInventoryClient({
       return;
     }
 
-    let photoToUpload = photoFile;
-    if (photoToUpload) {
-      try {
-        photoToUpload = await compressPhotoForUpload(photoToUpload);
-        if (photoToUpload.size > MAX_UPLOAD_BYTES) {
-          toast.error(
-            `Foto masih terlalu besar (${Math.round(photoToUpload.size / 1024 / 1024)}MB). Pakai foto lebih kecil.`
-          );
-          return;
-        }
-      } catch {
-        toast.error("Gagal memproses foto. Coba file lain atau perkecil dulu.");
-        return;
-      }
-    }
+    // Tangkap sebelum dialog ditutup
+    const pendingPhoto = photoFile;
+    const pendingCompress = photoCompressRef.current;
 
     setBusy(true);
     const payload = {
@@ -249,26 +278,19 @@ export function ProductInventoryClient({
     };
 
     if (editing) {
-      const result = await updateInventoryProduct(editing.id, payload);
+      const productId = editing.id;
+      const result = await updateInventoryProduct(productId, payload);
+      setBusy(false);
       if (!result.success) {
-        setBusy(false);
         toast.error(result.message);
         return;
       }
-      if (photoToUpload) {
-        const fd = new FormData();
-        fd.append("file", photoToUpload);
-        const up = await uploadProductPhoto(editing.id, fd);
-        if (!up.success) {
-          setBusy(false);
-          toast.error(up.message);
-          return;
-        }
-      }
-      setBusy(false);
       toast.success(result.message);
       setDialogOpen(false);
       router.refresh();
+      if (pendingPhoto) {
+        uploadPhotoInBackground(productId, pendingPhoto, pendingCompress);
+      }
       return;
     }
 
@@ -277,26 +299,17 @@ export function ProductInventoryClient({
       warehouse_id: form.warehouse_id || null,
       initial_qty: initialQty,
     });
+    setBusy(false);
     if (!result.success) {
-      setBusy(false);
       toast.error(result.message);
       return;
     }
-    if (photoToUpload && result.data?.id) {
-      const fd = new FormData();
-      fd.append("file", photoToUpload);
-      const up = await uploadProductPhoto(result.data.id, fd);
-      if (!up.success) {
-        setBusy(false);
-        toast.error(`Barang dibuat, tapi foto gagal: ${up.message}`);
-        router.refresh();
-        return;
-      }
-    }
-    setBusy(false);
     toast.success(result.message);
     setDialogOpen(false);
     router.refresh();
+    if (pendingPhoto && result.data?.id) {
+      uploadPhotoInBackground(result.data.id, pendingPhoto, pendingCompress);
+    }
   };
 
   const handleDelete = async () => {
@@ -539,10 +552,10 @@ export function ProductInventoryClient({
               <Input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
-                onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
+                onChange={(e) => pickPhoto(e.target.files?.[0] || null)}
               />
               <p className="text-xs text-muted-foreground">
-                JPEG, PNG, atau WebP · dikompres otomatis (foto besar dari HP aman)
+                JPEG, PNG, atau WebP · dikompres otomatis, upload di belakang setelah Simpan
               </p>
             </div>
             <div className="space-y-1">
