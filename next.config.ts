@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
       dynamic: 120,
       static: 300,
     },
+    // Default 1MB — foto HP sering 3–8MB; kompres client + naikkan limit
+    serverActions: {
+      bodySizeLimit: "8mb",
+    },
   },
 
   async headers() {

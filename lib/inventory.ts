@@ -566,7 +566,15 @@ export async function uploadProductPhoto(productId: string, formData: FormData):
     if (!product) return { success: false, message: "Barang tidak ditemukan" };
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const webp = await processProductPhotoBuffer(buffer);
+    let webp: Buffer;
+    try {
+      webp = await processProductPhotoBuffer(buffer);
+    } catch (sharpErr) {
+      return {
+        success: false,
+        message: `Gagal kompres foto: ${sharpErr instanceof Error ? sharpErr.message : "error"}`,
+      };
+    }
     const path = `${productId}.webp`;
 
     if (product.photo_url?.includes("/product-photos/")) {

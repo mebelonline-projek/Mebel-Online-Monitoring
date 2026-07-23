@@ -48,6 +48,36 @@ import {
 import { Plus, Pencil, Trash2, Package, Search } from "lucide-react";
 import Link from "next/link";
 
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4MB setelah kompres (aman untuk Vercel)
+
+/** Kompres foto di browser sebelum Server Action (default limit 1MB). */
+async function compressPhotoForUpload(file: File): Promise<File> {
+  if (file.size <= 1_200_000) return file;
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 1600;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    bitmap.close();
+    return file;
+  }
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/jpeg", 0.82)
+  );
+  if (!blob) return file;
+  return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", {
+    type: "image/jpeg",
+    lastModified: Date.now(),
+  });
+}
+
 type FormState = {
   name: string;
   category_id: string;
@@ -193,6 +223,22 @@ export function ProductInventoryClient({
       return;
     }
 
+    let photoToUpload = photoFile;
+    if (photoToUpload) {
+      try {
+        photoToUpload = await compressPhotoForUpload(photoToUpload);
+        if (photoToUpload.size > MAX_UPLOAD_BYTES) {
+          toast.error(
+            `Foto masih terlalu besar (${Math.round(photoToUpload.size / 1024 / 1024)}MB). Pakai foto lebih kecil.`
+          );
+          return;
+        }
+      } catch {
+        toast.error("Gagal memproses foto. Coba file lain atau perkecil dulu.");
+        return;
+      }
+    }
+
     setBusy(true);
     const payload = {
       name: form.name,
@@ -209,9 +255,9 @@ export function ProductInventoryClient({
         toast.error(result.message);
         return;
       }
-      if (photoFile) {
+      if (photoToUpload) {
         const fd = new FormData();
-        fd.append("file", photoFile);
+        fd.append("file", photoToUpload);
         const up = await uploadProductPhoto(editing.id, fd);
         if (!up.success) {
           setBusy(false);
@@ -236,9 +282,9 @@ export function ProductInventoryClient({
       toast.error(result.message);
       return;
     }
-    if (photoFile && result.data?.id) {
+    if (photoToUpload && result.data?.id) {
       const fd = new FormData();
-      fd.append("file", photoFile);
+      fd.append("file", photoToUpload);
       const up = await uploadProductPhoto(result.data.id, fd);
       if (!up.success) {
         setBusy(false);
@@ -495,7 +541,9 @@ export function ProductInventoryClient({
                 accept="image/jpeg,image/png,image/webp"
                 onChange={(e) => setPhotoFile(e.target.files?.[0] || null)}
               />
-              <p className="text-xs text-muted-foreground">JPEG, PNG, atau WebP · dikompres WebP otomatis</p>
+              <p className="text-xs text-muted-foreground">
+                JPEG, PNG, atau WebP · dikompres otomatis (foto besar dari HP aman)
+              </p>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">Nama</label>
