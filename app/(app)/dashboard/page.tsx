@@ -14,6 +14,9 @@ export default async function DashboardPage() {
   if (profile.role === "KARYAWAN") {
     redirect("/dashboard/karyawan");
   }
+  if (profile.role === "GUDANG") {
+    redirect("/gudang/stok");
+  }
 
   redirect("/login");
 }

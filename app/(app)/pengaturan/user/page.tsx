@@ -8,6 +8,7 @@ export default async function UserManagementPage() {
   if (!profile) redirect("/login");
 
   if (profile.role !== "OWNER") {
+    if (profile.role === "GUDANG") redirect("/gudang/stok");
     redirect("/dashboard/karyawan");
   }
 

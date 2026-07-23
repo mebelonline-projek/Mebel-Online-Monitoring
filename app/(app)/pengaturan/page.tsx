@@ -13,6 +13,7 @@ export default async function PengaturanPage() {
   if (!profile) redirect("/login");
 
   if (profile.role !== "OWNER") {
+    if (profile.role === "GUDANG") redirect("/gudang/stok");
     redirect("/dashboard/karyawan");
   }
 

@@ -120,11 +120,16 @@ export async function createUser(formData: {
 }
 
 // ============================================================
-// UPDATE — Update nama/role user (Owner only)
+// UPDATE — Update nama/role/password user (Owner only)
+// Password opsional: isi jika Owner mau reset sandi karyawan/gudang.
 // ============================================================
 export async function updateUser(
   id: string,
-  formData: { name: string; role: "OWNER" | "KARYAWAN" | "GUDANG" }
+  formData: {
+    name: string;
+    role: "KARYAWAN" | "GUDANG";
+    password?: string;
+  }
 ): Promise<ActionState> {
   try {
     const user = await getCurrentUser();
@@ -132,7 +137,6 @@ export async function updateUser(
 
     const adminClient = createAdminClient();
 
-    // Cek role — pakai admin client biar bisa baca users
     const { data: profile, error: profileError } = await adminClient
       .from("users")
       .select("role")
@@ -143,20 +147,70 @@ export async function updateUser(
       return { success: false, message: "Hanya Owner yang bisa mengubah user" };
     }
 
-    // Cegah Owner mengubah dirinya sendiri
     if (id === user.id) {
       return { success: false, message: "Tidak bisa mengubah akun Anda sendiri" };
     }
 
+    if (!formData.name || formData.name.trim().length < 2) {
+      return { success: false, message: "Nama minimal 2 karakter" };
+    }
+
+    if (formData.role !== "KARYAWAN" && formData.role !== "GUDANG") {
+      return { success: false, message: "Role harus Karyawan atau Gudang" };
+    }
+
+    const password = formData.password?.trim() || "";
+    if (password && password.length < 6) {
+      return { success: false, message: "Password minimal 6 karakter" };
+    }
+
+    const { data: targetUser, error: targetError } = await adminClient
+      .from("users")
+      .select("id, name, role")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (targetError || !targetUser) {
+      return { success: false, message: "User tidak ditemukan" };
+    }
+
+    if (targetUser.role === "OWNER") {
+      return { success: false, message: "Tidak bisa mengubah akun Owner lain" };
+    }
+
     const { error } = await adminClient
       .from("users")
-      .update({ name: formData.name, role: formData.role })
+      .update({ name: formData.name.trim(), role: formData.role })
       .eq("id", id);
 
     if (error) return { success: false, message: error.message };
 
+    // Sync Auth: metadata role/nama + password opsional (reset sandi)
+    const authUpdate: {
+      user_metadata: { name: string; role: string };
+      password?: string;
+    } = {
+      user_metadata: { name: formData.name.trim(), role: formData.role },
+    };
+    if (password) {
+      authUpdate.password = password;
+    }
+
+    const { error: authError } = await adminClient.auth.admin.updateUserById(id, authUpdate);
+    if (authError) {
+      return {
+        success: false,
+        message: `Profil tersimpan, tapi gagal update Auth: ${authError.message}`,
+      };
+    }
+
     revalidatePath("/pengaturan/user");
-    return { success: true, message: "User berhasil diupdate" };
+    return {
+      success: true,
+      message: password
+        ? "User berhasil diupdate (password diganti)"
+        : "User berhasil diupdate",
+    };
   } catch (error) {
     return {
       success: false,
@@ -194,12 +248,16 @@ export async function deleteUser(id: string): Promise<ActionState> {
     // Dapatkan nama user untuk pesan
     const { data: targetUser, error: targetError } = await adminClient
       .from("users")
-      .select("name, email")
+      .select("name, email, role")
       .eq("id", id)
       .maybeSingle();
 
     if (targetError || !targetUser) {
       return { success: false, message: "User tidak ditemukan" };
+    }
+
+    if (targetUser.role === "OWNER") {
+      return { success: false, message: "Tidak bisa menghapus akun Owner" };
     }
 
     // Hapus dari tabel users dulu

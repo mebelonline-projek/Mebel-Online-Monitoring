@@ -86,6 +86,7 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
         const result = await updateUser(editingUser.id, {
           name: form.name,
           role: form.role,
+          password: form.password.trim() || undefined,
         });
         if (!result.success) {
           toast.error(result.message);
@@ -283,8 +284,8 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
             <DialogTitle>{editingUser ? "Edit User" : "Tambah User Baru"}</DialogTitle>
             <DialogDescription>
               {editingUser
-                ? "Ubah nama atau role user."
-                : "Buat akun Karyawan (kasir) atau Gudang (inventori)."}
+                ? "Ubah nama, role, atau reset password (kosongkan password jika tidak diganti)."
+                : "Buat akun Karyawan (kasir/keuangan) atau Gudang (inventori saja)."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
