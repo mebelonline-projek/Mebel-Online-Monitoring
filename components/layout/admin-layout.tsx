@@ -5,6 +5,7 @@ import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { MobileHeader } from "@/components/layout/mobile-header";
 import { OfflineBanner } from "@/components/shared/offline-banner";
 import { NavWarmup } from "@/components/layout/nav-warmup";
+import { RoleRouteGuard } from "@/components/layout/role-route-guard";
 import { ProfileProvider, type AppProfile } from "@/components/providers/profile-context";
 import { StoreProvider, type AppStore } from "@/components/providers/store-context";
 
@@ -23,6 +24,7 @@ export function AdminLayout({
     <ProfileProvider profile={profile}>
       <StoreProvider initialStore={initialStore}>
         <div className="min-h-screen bg-background overflow-x-hidden">
+          <RoleRouteGuard role={profile.role} />
           <NavWarmup role={profile.role} />
           <OfflineBanner />
           <AppSidebar profile={profile} />

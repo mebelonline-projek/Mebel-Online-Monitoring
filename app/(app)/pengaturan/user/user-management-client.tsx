@@ -48,7 +48,12 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserRow | null>(null);
   const [deletingUser, setDeletingUser] = useState<UserRow | null>(null);
-  const [form, setForm] = useState({ email: "", password: "", name: "", role: "KARYAWAN" as const });
+  const [form, setForm] = useState({
+    email: "",
+    password: "",
+    name: "",
+    role: "KARYAWAN" as "KARYAWAN" | "GUDANG",
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -64,7 +69,12 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
 
   const openEditModal = (user: UserRow) => {
     setEditingUser(user);
-    setForm({ email: user.email, password: "", name: user.name, role: "KARYAWAN" });
+    setForm({
+      email: user.email,
+      password: "",
+      name: user.name,
+      role: user.role === "GUDANG" ? "GUDANG" : "KARYAWAN",
+    });
     setDialogOpen(true);
   };
 
@@ -75,7 +85,7 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
       if (editingUser) {
         const result = await updateUser(editingUser.id, {
           name: form.name,
-          role: editingUser.role,
+          role: form.role,
         });
         if (!result.success) {
           toast.error(result.message);
@@ -142,11 +152,11 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Kelola User</h1>
-          <p className="text-muted-foreground text-sm mt-1">Tambah, ubah, atau hapus user karyawan</p>
+          <p className="text-muted-foreground text-sm mt-1">Tambah, ubah, atau hapus karyawan & petugas gudang</p>
         </div>
         <Button onClick={openAddModal} className="gap-2">
           <Plus className="w-4 h-4" />
-          Tambah Karyawan
+          Tambah User
         </Button>
       </div>
 
@@ -170,7 +180,9 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
                     )}
                   </div>
                   <p className="text-sm text-muted-foreground break-all">{user.email}</p>
-                  <p className="text-sm">{user.role === "OWNER" ? "Owner" : "Karyawan"}</p>
+                  <p className="text-sm">
+                    {user.role === "OWNER" ? "Owner" : user.role === "GUDANG" ? "Gudang" : "Karyawan"}
+                  </p>
                   {user.id !== currentUserId && user.role !== "OWNER" && (
                     <div className="flex gap-2 pt-1">
                       <Button size="sm" variant="outline" onClick={() => openEditModal(user)}>
@@ -222,7 +234,9 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
                         ) : (
                           <UserRound className="w-3.5 h-3.5 text-muted-foreground" />
                         )}
-                        <span className="text-sm">{user.role === "OWNER" ? "Owner" : "Karyawan"}</span>
+                        <span className="text-sm">
+                          {user.role === "OWNER" ? "Owner" : user.role === "GUDANG" ? "Gudang" : "Karyawan"}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">{formatDate(user.created_at)}</TableCell>
@@ -266,11 +280,11 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>{editingUser ? "Edit Karyawan" : "Tambah Karyawan Baru"}</DialogTitle>
+            <DialogTitle>{editingUser ? "Edit User" : "Tambah User Baru"}</DialogTitle>
             <DialogDescription>
               {editingUser
-                ? "Ubah nama atau role karyawan."
-                : "Buat akun baru untuk karyawan. Karyawan akan menerima email dan password untuk login."}
+                ? "Ubah nama atau role user."
+                : "Buat akun Karyawan (kasir) atau Gudang (inventori)."}
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -305,6 +319,22 @@ export function UserManagementClient({ users: initialUsers, currentUserId }: Pro
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 placeholder={editingUser ? "Biarkan kosong" : "Minimal 6 karakter"}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">
+                Role <span className="text-destructive">*</span>
+              </label>
+              <select
+                value={form.role}
+                onChange={(e) =>
+                  setForm({ ...form, role: e.target.value as "KARYAWAN" | "GUDANG" })
+                }
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="KARYAWAN">Karyawan (kasir)</option>
+                <option value="GUDANG">Gudang (inventori)</option>
+              </select>
             </div>
 
             <DialogFooter className="gap-2 pt-2">

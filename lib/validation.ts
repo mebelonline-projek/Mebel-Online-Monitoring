@@ -88,6 +88,7 @@ export const transactionItemSchema = z.object({
   quantity: z.coerce.number().min(1, "Min 1").max(999),
   unit_price: z.coerce.number().min(1, "Harga item harus lebih dari 0").max(999_999_999),
   note: z.string().max(300).optional().or(z.literal("")),
+  warehouse_id: z.string().uuid().optional().or(z.literal("")),
 });
 
 export type TransactionItemFormValues = z.infer<typeof transactionItemSchema>;

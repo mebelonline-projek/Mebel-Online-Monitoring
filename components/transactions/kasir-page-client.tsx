@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { TransactionForm } from "@/components/transactions/transaction-form";
-import { fetchPickerData, getCachedPickerData } from "@/lib/picker-client";
+import {
+  fetchPickerData,
+  getCachedPickerData,
+  type PickerStock,
+  type PickerWarehouse,
+} from "@/lib/picker-client";
 import type { CustomerRow } from "@/lib/customers";
 import type { ProductRow } from "@/lib/products";
 
@@ -22,6 +27,10 @@ export function KasirPageClient() {
 
   const [customers, setCustomers] = useState<CustomerRow[]>(initialCache?.customers ?? []);
   const [products, setProducts] = useState<ProductRow[]>(initialCache?.products ?? []);
+  const [warehouses, setWarehouses] = useState<PickerWarehouse[]>(
+    initialCache?.warehouses ?? []
+  );
+  const [stocks, setStocks] = useState<PickerStock[]>(initialCache?.stocks ?? []);
   const [loading, setLoading] = useState(!initialCache);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +42,8 @@ export function KasirPageClient() {
         if (cancelled) return;
         setCustomers(data.customers);
         setProducts(data.products);
+        setWarehouses(data.warehouses);
+        setStocks(data.stocks);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -60,5 +71,13 @@ export function KasirPageClient() {
     );
   }
 
-  return <TransactionForm quickSale customers={customers} products={products} />;
+  return (
+    <TransactionForm
+      quickSale
+      customers={customers}
+      products={products}
+      warehouses={warehouses}
+      stocks={stocks}
+    />
+  );
 }

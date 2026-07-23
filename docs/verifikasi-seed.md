@@ -58,21 +58,23 @@ ORDER BY category;
 -- ============================================================
 -- D. RINGKASAN PER BULAN (12 bulan terakhir)
 -- ============================================================
-SELECT 
-  TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as bulan,
-  COUNT(*) FILTER (WHERE status != 'BATAL') as tx_count,
-  SUM(final_price) FILTER (WHERE status != 'BATAL') as revenue,
-  ROUND(SUM(t.total_hpp)) as total_hpp,
-  ROUND(SUM(final_price) FILTER (WHERE status != 'BATAL') - SUM(t.total_hpp)) as gross_profit
-FROM transactions t
+SELECT
+  TO_CHAR(DATE_TRUNC('month', tx.created_at), 'YYYY-MM') AS bulan,
+  COUNT(*) FILTER (WHERE tx.status != 'BATAL') AS tx_count,
+  SUM(tx.final_price) FILTER (WHERE tx.status != 'BATAL') AS revenue,
+  ROUND(SUM(hpp.total_hpp)) AS total_hpp,
+  ROUND(
+    SUM(tx.final_price) FILTER (WHERE tx.status != 'BATAL') - SUM(hpp.total_hpp)
+  ) AS gross_profit
+FROM transactions tx
 LEFT JOIN LATERAL (
-  SELECT COALESCE(SUM(amount), 0) as total_hpp
+  SELECT COALESCE(SUM(h.amount), 0) AS total_hpp
   FROM hpp_items h
-  WHERE h.transaction_id = t.id
-) t ON true
-WHERE t.created_at >= '2025-07-01'
-  AND t.created_at < '2026-07-01'
-GROUP BY DATE_TRUNC('month', created_at)
+  WHERE h.transaction_id = tx.id
+) hpp ON true
+WHERE tx.created_at >= '2025-07-01'
+  AND tx.created_at < '2026-07-01'
+GROUP BY DATE_TRUNC('month', tx.created_at)
 ORDER BY bulan;
 ```
 
@@ -80,19 +82,19 @@ ORDER BY bulan;
 -- ============================================================
 -- E. RINGKASAN PER TAHUN
 -- ============================================================
-SELECT 
-  EXTRACT(YEAR FROM created_at) as tahun,
-  COUNT(*) FILTER (WHERE status != 'BATAL') as tx_count,
-  SUM(final_price) FILTER (WHERE status != 'BATAL') as revenue,
-  ROUND(SUM(t.total_hpp)) as total_hpp
-FROM transactions t
+SELECT
+  EXTRACT(YEAR FROM tx.created_at) AS tahun,
+  COUNT(*) FILTER (WHERE tx.status != 'BATAL') AS tx_count,
+  SUM(tx.final_price) FILTER (WHERE tx.status != 'BATAL') AS revenue,
+  ROUND(SUM(hpp.total_hpp)) AS total_hpp
+FROM transactions tx
 LEFT JOIN LATERAL (
-  SELECT COALESCE(SUM(amount), 0) as total_hpp
+  SELECT COALESCE(SUM(h.amount), 0) AS total_hpp
   FROM hpp_items h
-  WHERE h.transaction_id = t.id
-) t ON true
-WHERE status != 'BATAL'
-GROUP BY EXTRACT(YEAR FROM created_at)
+  WHERE h.transaction_id = tx.id
+) hpp ON true
+WHERE tx.status != 'BATAL'
+GROUP BY EXTRACT(YEAR FROM tx.created_at)
 ORDER BY tahun;
 ```
 

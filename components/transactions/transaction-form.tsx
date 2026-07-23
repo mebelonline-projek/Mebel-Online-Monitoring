@@ -26,6 +26,8 @@ import { SearchablePicker } from "@/components/shared/searchable-picker";
 import { invalidateTransactionRelatedCaches } from "@/lib/use-cached-list";
 import type { CustomerRow } from "@/lib/customers";
 import type { ProductRow } from "@/lib/products";
+import type { PickerStock, PickerWarehouse } from "@/lib/picker-client";
+import { getStockQty } from "@/lib/picker-client";
 
 function formatApiErrors(errors?: Record<string, string[] | undefined>): string | undefined {
   if (!errors) return undefined;
@@ -48,6 +50,8 @@ interface Props {
   quickSale?: boolean;
   customers?: CustomerRow[];
   products?: ProductRow[];
+  warehouses?: PickerWarehouse[];
+  stocks?: PickerStock[];
 }
 
 type FormState = {
@@ -68,6 +72,8 @@ export function TransactionForm({
   quickSale = false,
   customers = [],
   products = [],
+  warehouses = [],
+  stocks = [],
 }: Props) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
@@ -111,8 +117,25 @@ export function TransactionForm({
             quantity: i.quantity,
             unit_price: Number(i.unit_price) || 0,
             note: i.note || "",
+            warehouse_id: i.warehouse_id || "",
           }))
       : undefined;
+
+    if (useLineItems && itemsPayload) {
+      const salesWh = warehouses.find((w) => w.is_sales_warehouse && w.is_active);
+      for (const row of itemsPayload) {
+        if (!row.product_id) continue;
+        const whId = row.warehouse_id || salesWh?.id;
+        if (!whId) continue;
+        const available = getStockQty(stocks, row.product_id, whId);
+        if (available < row.quantity) {
+          toast.error(
+            `Stok tidak cukup untuk "${row.product_name}" (butuh ${row.quantity}, tersedia ${available}). Pilih gudang lain atau kurangi qty.`
+          );
+          return;
+        }
+      }
+    }
 
     const computedTotal = useLineItems ? lineItemsTotal(lineItems) : Number(form.final_price);
 
@@ -175,6 +198,7 @@ export function TransactionForm({
           quantity: number;
           unit_price: number;
           note?: string;
+          warehouse_id?: string;
         }>;
       };
 
@@ -314,6 +338,8 @@ export function TransactionForm({
           items={lineItems}
           onChange={setLineItems}
           products={products}
+          warehouses={warehouses}
+          stocks={stocks}
         />
       ) : (
         <>

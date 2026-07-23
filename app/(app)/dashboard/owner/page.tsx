@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/table";
 import { TrendingUp, TrendingDown, DollarSign, Percent, ArrowRight } from "lucide-react";
 
+/** Selalu ambil data segar — KPI periode sensitif terhadap seed/transaksi baru */
+export const dynamic = "force-dynamic";
 
 const periodOptions: { label: string; value: PeriodType }[] = [
   { label: "Hari", value: "daily" },
@@ -100,6 +102,18 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
     },
   ];
 
+  const periodScopeLabel =
+    period === "daily"
+      ? "Hari ini"
+      : period === "weekly"
+        ? "Minggu ini"
+        : period === "monthly"
+          ? "Bulan ini"
+          : "Tahun ini";
+
+  const chartHasActivity = stats.monthlyData.some((d) => d.revenue > 0);
+  const kpiEmptyButChartHasData = stats.revenue === 0 && chartHasActivity;
+
   const periodLabel =
     periodOptions.find((o) => o.value === period)?.label.toLowerCase() || "periode";
 
@@ -110,14 +124,26 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Ringkasan Keuangan</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            {period === "daily" && "Hari ini dibanding kemarin (30 hari terakhir di chart)."}
-            {period === "weekly" && "Minggu ini dibanding minggu lalu (12 minggu terakhir di chart)."}
-            {period === "monthly" && "Bulan ini dibanding bulan lalu (12 bulan terakhir di chart)."}
-            {period === "yearly" && "Tahun ini dibanding tahun lalu (5 tahun terakhir di chart)."}
+            {period === "daily" &&
+              "KPI = hari ini vs kemarin. Grafik = 30 hari terakhir."}
+            {period === "weekly" &&
+              "KPI = minggu ini vs minggu lalu. Grafik = 12 minggu terakhir."}
+            {period === "monthly" &&
+              "KPI = bulan ini vs bulan lalu. Grafik = 12 bulan terakhir."}
+            {period === "yearly" &&
+              "KPI = tahun ini vs tahun lalu. Grafik = 5 tahun terakhir."}
           </p>
         </div>
         <PeriodSelector currentPeriod={period} />
       </div>
+
+      {kpiEmptyButChartHasData && (
+        <p className="text-sm text-muted-foreground rounded-lg border border-border bg-muted/40 px-4 py-3">
+          Belum ada penjualan di <span className="font-medium text-foreground">{periodScopeLabel.toLowerCase()}</span>.
+          Angka kartu di bawah memang Rp 0 — grafik tetap menampilkan tren periode sebelumnya.
+          Coba filter <span className="font-medium text-foreground">Tahun</span> untuk melihat omzet 2026.
+        </p>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -138,11 +164,10 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
                     <span className="text-xs uppercase tracking-wider font-bold text-muted-foreground">
                       {card.title}
                     </span>
-                    {"subtitle" in card && card.subtitle && (
-                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                        ({card.subtitle})
-                      </p>
-                    )}
+                    <p className="text-[10px] text-muted-foreground/80 mt-0.5">
+                      {periodScopeLabel}
+                      {"subtitle" in card && card.subtitle ? ` · ${card.subtitle}` : ""}
+                    </p>
                   </div>
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
                     <Icon className="w-5 h-5 text-primary" />

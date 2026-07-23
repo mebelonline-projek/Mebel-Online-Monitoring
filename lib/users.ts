@@ -12,7 +12,7 @@ export interface UserRow {
   id: string;
   email: string;
   name: string;
-  role: "OWNER" | "KARYAWAN";
+  role: "OWNER" | "KARYAWAN" | "GUDANG";
   created_at: string;
 }
 
@@ -51,7 +51,7 @@ export async function createUser(formData: {
   email: string;
   password: string;
   name: string;
-  role: "KARYAWAN";
+  role: "KARYAWAN" | "GUDANG";
 }): Promise<ActionState> {
   try {
     const user = await getCurrentUser();
@@ -124,7 +124,7 @@ export async function createUser(formData: {
 // ============================================================
 export async function updateUser(
   id: string,
-  formData: { name: string; role: "OWNER" | "KARYAWAN" }
+  formData: { name: string; role: "OWNER" | "KARYAWAN" | "GUDANG" }
 ): Promise<ActionState> {
   try {
     const user = await getCurrentUser();

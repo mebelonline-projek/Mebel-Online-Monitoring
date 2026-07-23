@@ -15,6 +15,10 @@ import {
   Receipt,
   Users,
   Package,
+  Warehouse,
+  Tags,
+  Boxes,
+  ArrowLeftRight,
   Wallet,
   FileText,
   Wrench,
@@ -27,6 +31,7 @@ import { shouldPrefetchNav } from "@/lib/nav-prefetch";
 
 const getDashboardHref = (role: string) => {
   if (role === "OWNER") return "/dashboard/owner";
+  if (role === "GUDANG") return "/gudang/stok";
   if (role === "KARYAWAN") return "/dashboard/karyawan";
   return "/dashboard";
 };
@@ -40,17 +45,27 @@ export function MobileNavMenu({ role, triggerClassName }: Props) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  const menuItems = [
-    { label: "Kasir", href: "/kasir", icon: Plus },
-    { label: "Dashboard", href: getDashboardHref(role), icon: LayoutDashboard },
-    { label: "Transaksi", href: "/transaksi", icon: Receipt },
-    { label: "Pelanggan", href: "/customer", icon: Users },
-    { label: "Produk", href: "/produk", icon: Package },
-    { label: "Piutang", href: "/piutang", icon: Wallet, ownerOnly: true },
-    { label: "Invoice", href: "/invoice", icon: FileText },
-    { label: "Biaya Operasional", href: "/operasional", icon: Wrench },
-    { label: "Pengaturan", href: "/pengaturan", icon: Settings, ownerOnly: true },
-  ].filter((item) => !item.ownerOnly || role === "OWNER");
+  const menuItems =
+    role === "GUDANG"
+      ? [
+          { label: "Gudang", href: "/gudang", icon: Warehouse },
+          { label: "Kategori", href: "/gudang/kategori", icon: Tags },
+          { label: "Barang", href: "/gudang/barang", icon: Package },
+          { label: "Stok", href: "/gudang/stok", icon: Boxes },
+          { label: "Mutasi", href: "/gudang/mutasi", icon: ArrowLeftRight },
+        ]
+      : [
+          { label: "Kasir", href: "/kasir", icon: Plus },
+          { label: "Dashboard", href: getDashboardHref(role), icon: LayoutDashboard },
+          { label: "Transaksi", href: "/transaksi", icon: Receipt },
+          { label: "Pelanggan", href: "/customer", icon: Users },
+          { label: "Produk", href: "/produk", icon: Package },
+          { label: "Gudang", href: "/gudang", icon: Warehouse, ownerOnly: true },
+          { label: "Piutang", href: "/piutang", icon: Wallet, ownerOnly: true },
+          { label: "Invoice", href: "/invoice", icon: FileText },
+          { label: "Biaya Operasional", href: "/operasional", icon: Wrench },
+          { label: "Pengaturan", href: "/pengaturan", icon: Settings, ownerOnly: true },
+        ].filter((item) => !("ownerOnly" in item && item.ownerOnly) || role === "OWNER");
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -74,7 +89,10 @@ export function MobileNavMenu({ role, triggerClassName }: Props) {
         <nav className="grid grid-cols-2 gap-2 pt-2">
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname.startsWith(item.href);
+            const isActive =
+              item.href === "/gudang"
+                ? pathname === "/gudang"
+                : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

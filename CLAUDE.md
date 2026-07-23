@@ -35,18 +35,24 @@
 ## 🛡️ SUPABASE DATABASE LINTER — Warning Toleransi
 
 ### Latar Belakang
-Kami menjalankan Supabase Database Linter dan mendapatkan 13 warning.
-**8 berhasil dihilangkan**, **5 tersisa** yang harus ditoleransi.
+Baseline lama: 13 warning → 8 diperbaiki → **5 ditoleransi**.
+Setelah modul inventori, sempat muncul warning baru (`product-photos` listing, `apply_stock_change` EXECUTE).
+Perbaikan: jalankan [`supabase/fix_inventory_linter.sql`](supabase/fix_inventory_linter.sql) + RPC stok hanya via `service_role` di app.
 
-### 5 Warning yang Ditoleransi (JANGAN DIUTAK-ATIK)
+### Warning yang Ditoleransi (JANGAN DIUTAK-ATIK)
 
-| # | Warning | Fungsi/Objek | Alasan Tidak Bisa Dihilangkan |
-|---|---------|-------------|------------------------------|
-| 1 | anon → rls_auto_enable | `rls_auto_enable()` | **False positive.** Fungsi BAWAAN Supabase (terhubung ke event trigger `ensure_rls`). TIDAK BISA DI-DROP (error dependensi trigger). `REVOKE EXECUTE` sudah diterapkan. |
-| 2 | authenticated → rls_auto_enable | `rls_auto_enable()` | **False positive.** Sama seperti #1. Fungsi bawaan Supabase. |
-| 3 | authenticated → `create_user_profile` | `create_user_profile()` | **By design.** Fungsi ini WAJIB dipanggil oleh authenticated user saat registrasi. Kalau direvoke, user baru TIDAK BISA DAFTAR. |
-| 4 | authenticated → `get_user_role` | `get_user_role()` | **By design.** 13 RLS policy bergantung pada fungsi ini. Kalau direvoke, SEMUA DATA TIDAK BISA DIAKSES (aplikasi blank total). |
-| 5 | Leaked Password Protection | Auth Settings | **Pro plan only.** Fitur ini hanya tersedia di Supabase Pro plan ke atas. Tidak bisa diaktifkan di Free plan. |
+Target akhir setelah harden (status aktual ~3 warning):
+
+| # | Warning | Fungsi/Objek | Alasan |
+|---|---------|-------------|---------|
+| 1 | authenticated → create_user_profile | `create_user_profile()` | **By design.** Wajib untuk registrasi. |
+| 2 | authenticated → get_user_role | `get_user_role()` | **By design.** Jantung RLS. |
+| 3 | Leaked Password Protection | Auth | **Pro plan only.** |
+
+`rls_auto_enable` / anon EXECUTE biasanya hilang setelah `fix_anon_security_definer.sql`.  
+Inventori (`apply_stock_change`, listing `product-photos`) **tidak** boleh kembali ke daftar warning.
+
+**Jangan** revoke `get_user_role` atau `create_user_profile` dari `authenticated`.
 
 ### ⚠️ PENTING: JANGAN UBAH search_path FUNGSI INI
 Ketiga fungsi di bawah menggunakan `search_path` multi-schema. JANGAN pernah diubah ke `search_path = ''` karena akan MERUSAK aplikasi:
@@ -77,6 +83,9 @@ Ketiga fungsi di bawah menggunakan `search_path` multi-schema. JANGAN pernah diu
 |------|-----|
 | `supabase/migration.sql` | Database schema awal (8 tabel + RLS + fungsi) |
 | `supabase/fix_all_warnings.sql` | Perbaikan semua 13 warning Linter (VERSI TERBARU) |
+| `supabase/fix_inventory_linter.sql` | Fix linter inventori (bucket listing + revoke apply_stock_change) |
+| `supabase/fix_anon_security_definer.sql` | Cabut EXECUTE anon dari create_user_profile / get_user_role (REVOKE PUBLIC) |
+| `supabase/migrate_inventory.sql` | Schema inventori multi-gudang + role GUDANG |
 | `supabase/fix_get_user_role.sql` | Emergency fix untuk search_path (3 fungsi) |
 | `supabase/storage_bucket.sql` | Bucket logos + RLS |
 | `supabase/seed_dummy.sql` | Data dummy untuk testing |

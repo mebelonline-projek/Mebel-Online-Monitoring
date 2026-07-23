@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import { createServerSupabaseClient, getCurrentUser, getUserProfile } from "@/lib/supabase-server";
 import { transactionSchema, transactionCreateSchema, hppItemSchema, paymentSchema, fulfillmentUpdateSchema } from "@/lib/validation";
+import { applySaleStock, restoreSaleStock } from "@/lib/inventory";
 import {
   addWibDays,
   getWibDateString,
@@ -196,21 +197,54 @@ export async function createTransaction(
     }
 
     if (data.items && data.items.length > 0) {
-      const rows = data.items.map((item, index) => ({
-        transaction_id: transaction.id,
-        product_id: item.product_id && item.product_id.length > 0 ? item.product_id : null,
-        product_name: item.product_name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        line_total: item.quantity * item.unit_price,
-        note: item.note || null,
-        sort_order: index,
-      }));
+      const { data: salesWh } = await supabase
+        .from("warehouses")
+        .select("id")
+        .eq("is_sales_warehouse", true)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      const rows = data.items.map((item, index) => {
+        const wh =
+          item.warehouse_id && item.warehouse_id.length > 0
+            ? item.warehouse_id
+            : salesWh?.id || null;
+        return {
+          transaction_id: transaction.id,
+          product_id: item.product_id && item.product_id.length > 0 ? item.product_id : null,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          line_total: item.quantity * item.unit_price,
+          note: item.note || null,
+          sort_order: index,
+          warehouse_id: wh,
+        };
+      });
 
       const { error: itemsError } = await supabase.from("transaction_items").insert(rows);
       if (itemsError) {
         await supabase.from("transactions").delete().eq("id", transaction.id);
         return { success: false, message: `Gagal menyimpan item: ${itemsError.message}` };
+      }
+
+      for (const row of rows) {
+        if (!row.product_id || !row.warehouse_id) continue;
+        const stockResult = await applySaleStock({
+          productId: row.product_id,
+          warehouseId: row.warehouse_id,
+          qty: row.quantity,
+          transactionId: transaction.id,
+          userId: user.id,
+        });
+        if (!stockResult.ok) {
+          await restoreSaleStock(transaction.id, user.id);
+          await supabase.from("transactions").delete().eq("id", transaction.id);
+          return {
+            success: false,
+            message: `Stok tidak cukup untuk "${row.product_name}": ${stockResult.message}. Transfer ke gudang penjualan atau pilih gudang lain.`,
+          };
+        }
       }
     }
 
@@ -594,6 +628,12 @@ export async function voidTransaction(
 
     if (voidError) {
       return { success: false, message: voidError.message };
+    }
+
+    try {
+      await restoreSaleStock(id, user.id);
+    } catch {
+      // Jangan gagalkan void jika inventori belum dimigrasi
     }
 
     await syncLinkedInvoiceTotals(supabase, [id]);
@@ -1438,46 +1478,85 @@ function fmtDateOnly(d: Date): string {
 }
 
 // ── Batch: ambil data chart (paralel, lalu HPP setelah ID transaksi) ──
+// PostgREST default max 1000 rows — WAJIB paginate.
+async function fetchAllRows<T>(
+  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  const pageSize = 1000;
+  const rows: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await fetchPage(from, from + pageSize - 1);
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    rows.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return rows;
+}
+
 async function fetchChartRawData(
   supabase: ReturnType<typeof createAdminClient>,
   chartStart: Date,
   chartEnd: Date
 ) {
-  const [paymentsRes, txRes, opCostsRes] = await Promise.all([
-    supabase
-      .from("transaction_payments")
-      .select("amount, transaction_id, payment_date, transactions!inner(status)")
-      .gte("payment_date", fmtDateISO(chartStart))
-      .lte("payment_date", fmtDateISO(chartEnd)),
-    supabase
-      .from("transactions")
-      .select("id, status, created_at")
-      .gte("created_at", fmtDateISO(chartStart))
-      .lte("created_at", fmtDateISO(chartEnd)),
-    supabase
-      .from("operational_costs")
-      .select("amount, period_start, period_end")
-      .lte("period_start", fmtDateOnly(chartEnd))
-      .gte("period_end", fmtDateOnly(chartStart)),
+  const startIso = fmtDateISO(chartStart);
+  const endIso = fmtDateISO(chartEnd);
+  const chartEndDate = fmtDateOnly(chartEnd);
+  const chartStartDate = fmtDateOnly(chartStart);
+
+  const [allPayments, allTx, allOpCosts] = await Promise.all([
+    fetchAllRows(async (from, to) =>
+      supabase
+        .from("transaction_payments")
+        .select("amount, transaction_id, payment_date, transactions!inner(status)")
+        .gte("payment_date", startIso)
+        .lte("payment_date", endIso)
+        .order("payment_date", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows(async (from, to) =>
+      supabase
+        .from("transactions")
+        .select("id, status, created_at")
+        .gte("created_at", startIso)
+        .lte("created_at", endIso)
+        .order("created_at", { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllRows(async (from, to) =>
+      supabase
+        .from("operational_costs")
+        .select("amount, period_start, period_end")
+        .lte("period_start", chartEndDate)
+        .gte("period_end", chartStartDate)
+        .order("period_start", { ascending: true })
+        .range(from, to)
+    ),
   ]);
 
-  const allTx = txRes.data || [];
   const validTxIds = allTx.filter((t) => t.status !== "BATAL").map((t) => t.id);
-  const allHpp =
-    validTxIds.length > 0
-      ? (
-          await supabase
-            .from("hpp_items")
-            .select("amount, transaction_id")
-            .in("transaction_id", validTxIds)
-        ).data || []
-      : [];
+  const allHpp: Array<{ amount: number; transaction_id: string }> = [];
+  const chunkSize = 200;
+  for (let i = 0; i < validTxIds.length; i += chunkSize) {
+    const chunk = validTxIds.slice(i, i + chunkSize);
+    const chunkRows = await fetchAllRows(async (from, to) =>
+      supabase
+        .from("hpp_items")
+        .select("amount, transaction_id")
+        .in("transaction_id", chunk)
+        .order("transaction_id", { ascending: true })
+        .range(from, to)
+    );
+    allHpp.push(...chunkRows);
+  }
 
   return {
-    allPayments: paymentsRes.data || [],
+    allPayments,
     allTx,
     allHpp,
-    allOpCosts: opCostsRes.data || [],
+    allOpCosts,
   };
 }
 
@@ -1700,11 +1779,15 @@ async function computeDashboardStats(period: PeriodType): Promise<DashboardStats
 }
 
 // ⚡ Cached compute — admin client (tanpa cookies). Auth/role WAJIB di luar ini.
-const getCachedDashboardStats = unstable_cache(
-  computeDashboardStats,
-  ["dashboard-stats"],
-  { revalidate: 300, tags: [CACHE_TAGS.dashboard] }
-);
+// period masuk keyParts + args agar tiap filter cache terpisah.
+function getCachedDashboardStats(period: PeriodType): Promise<DashboardStats> {
+  const cached = unstable_cache(
+    () => computeDashboardStats(period),
+    ["dashboard-stats", period],
+    { revalidate: 60, tags: [CACHE_TAGS.dashboard] }
+  );
+  return cached();
+}
 
 /** Owner-only entry: cek auth di luar cache, baca agregat via cache. */
 export async function getDashboardStats(period: PeriodType): Promise<DashboardStats> {

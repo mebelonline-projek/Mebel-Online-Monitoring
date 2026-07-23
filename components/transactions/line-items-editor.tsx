@@ -1,6 +1,7 @@
 "use client";
 
 import { formatCurrency } from "@/lib/formatters";
+import { getStockQty, type PickerStock, type PickerWarehouse } from "@/lib/picker-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -15,12 +16,15 @@ export interface LineItem {
   quantity: number;
   unit_price: string;
   note: string;
+  warehouse_id: string | null;
 }
 
 interface Props {
   items: LineItem[];
   onChange: (items: LineItem[]) => void;
   products: ProductRow[];
+  warehouses?: PickerWarehouse[];
+  stocks?: PickerStock[];
 }
 
 function newLine(): LineItem {
@@ -31,10 +35,20 @@ function newLine(): LineItem {
     quantity: 1,
     unit_price: "",
     note: "",
+    warehouse_id: null,
   };
 }
 
-export function LineItemsEditor({ items, onChange, products }: Props) {
+export function LineItemsEditor({
+  items,
+  onChange,
+  products,
+  warehouses = [],
+  stocks = [],
+}: Props) {
+  const salesWh = warehouses.find((w) => w.is_sales_warehouse && w.is_active) || null;
+  const activeWarehouses = warehouses.filter((w) => w.is_active);
+
   const productOptions = products.map((p) => ({
     id: p.id,
     label: p.name,
@@ -54,6 +68,17 @@ export function LineItemsEditor({ items, onChange, products }: Props) {
     onChange([...items, newLine()]);
   };
 
+  const resolveWarehouseForProduct = (productId: string, qty: number, currentWh: string | null) => {
+    if (!salesWh) return currentWh;
+    const salesQty = getStockQty(stocks, productId, salesWh.id);
+    if (salesQty >= qty) return salesWh.id;
+    if (currentWh && getStockQty(stocks, productId, currentWh) >= qty) return currentWh;
+    const alt = activeWarehouses.find(
+      (w) => w.id !== salesWh.id && getStockQty(stocks, productId, w.id) >= qty
+    );
+    return alt?.id || salesWh.id;
+  };
+
   const total = items.reduce(
     (sum, item) => sum + item.quantity * (Number(item.unit_price) || 0),
     0
@@ -70,78 +95,155 @@ export function LineItemsEditor({ items, onChange, products }: Props) {
       </div>
 
       <div className="space-y-4">
-        {items.map((item, index) => (
-          <div
-            key={item.key}
-            className="rounded-lg border border-border p-4 space-y-3 bg-accent/20"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted-foreground uppercase">
-                Item {index + 1}
-              </span>
-              {items.length > 1 && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive"
-                  onClick={() => removeItem(item.key)}
-                  aria-label="Hapus baris"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+        {items.map((item, index) => {
+          const salesQty =
+            item.product_id && salesWh
+              ? getStockQty(stocks, item.product_id, salesWh.id)
+              : null;
+          const needFallback =
+            Boolean(item.product_id && salesWh) &&
+            salesQty !== null &&
+            salesQty < item.quantity;
+          const selectedWhId = item.warehouse_id || salesWh?.id || null;
+          const selectedQty =
+            item.product_id && selectedWhId
+              ? getStockQty(stocks, item.product_id, selectedWhId)
+              : null;
+          const insufficient =
+            item.product_id && selectedQty !== null && selectedQty < item.quantity;
+
+          return (
+            <div
+              key={item.key}
+              className="rounded-lg border border-border p-4 space-y-3 bg-accent/20"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-muted-foreground uppercase">
+                  Item {index + 1}
+                </span>
+                {items.length > 1 && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive"
+                    onClick={() => removeItem(item.key)}
+                    aria-label="Hapus baris"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+
+              <SearchablePicker
+                label="Produk"
+                placeholder="Cari produk..."
+                options={productOptions}
+                value={item.product_id}
+                onChange={(id, opt) => {
+                  const product = products.find((p) => p.id === id);
+                  const qty = item.quantity;
+                  const wh = id ? resolveWarehouseForProduct(id, qty, null) : null;
+                  updateItem(item.key, {
+                    product_id: id,
+                    product_name: opt?.label || item.product_name,
+                    unit_price: product?.base_price
+                      ? product.base_price.toString()
+                      : item.unit_price,
+                    warehouse_id: wh,
+                  });
+                }}
+                manualValue={item.product_name}
+                onManualChange={(v) =>
+                  updateItem(item.key, {
+                    product_name: v,
+                    product_id: null,
+                    warehouse_id: null,
+                  })
+                }
+                manualPlaceholder="Atau ketik nama produk..."
+              />
+
+              {item.product_id && salesWh && (
+                <p className="text-xs text-muted-foreground">
+                  Stok {salesWh.name}:{" "}
+                  <span className={salesQty !== null && salesQty < item.quantity ? "text-destructive font-medium" : ""}>
+                    {salesQty ?? 0} pcs
+                  </span>
+                </p>
               )}
-            </div>
 
-            <SearchablePicker
-              label="Produk"
-              placeholder="Cari produk..."
-              options={productOptions}
-              value={item.product_id}
-              onChange={(id, opt) => {
-                const product = products.find((p) => p.id === id);
-                updateItem(item.key, {
-                  product_id: id,
-                  product_name: opt?.label || item.product_name,
-                  unit_price: product?.base_price ? product.base_price.toString() : item.unit_price,
-                });
-              }}
-              manualValue={item.product_name}
-              onManualChange={(v) =>
-                updateItem(item.key, { product_name: v, product_id: null })
-              }
-              manualPlaceholder="Atau ketik nama produk..."
-            />
+              {needFallback && (
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">
+                    Stok gudang penjualan kurang — pilih gudang sumber
+                  </label>
+                  <select
+                    value={selectedWhId || ""}
+                    onChange={(e) => updateItem(item.key, { warehouse_id: e.target.value || null })}
+                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {activeWarehouses.map((w) => {
+                      const q = item.product_id
+                        ? getStockQty(stocks, item.product_id, w.id)
+                        : 0;
+                      return (
+                        <option key={w.id} value={w.id} disabled={q < item.quantity}>
+                          {w.name}
+                          {w.is_sales_warehouse ? " (penjualan)" : ""} — {q} pcs
+                          {q < item.quantity ? " (tidak cukup)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Qty</label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={999}
-                  value={item.quantity}
-                  onChange={(e) =>
-                    updateItem(item.key, { quantity: Math.max(1, Number(e.target.value) || 1) })
-                  }
-                  className="min-h-[44px]"
-                />
+              {insufficient && (
+                <p className="text-xs text-destructive">
+                  Stok di gudang dipilih tidak cukup untuk qty ini.
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Qty</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={999}
+                    value={item.quantity}
+                    onChange={(e) => {
+                      const quantity = Math.max(1, Number(e.target.value) || 1);
+                      const wh =
+                        item.product_id
+                          ? resolveWarehouseForProduct(
+                              item.product_id,
+                              quantity,
+                              item.warehouse_id
+                            )
+                          : item.warehouse_id;
+                      updateItem(item.key, { quantity, warehouse_id: wh });
+                    }}
+                    className="min-h-[44px]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-muted-foreground">Harga Satuan</label>
+                  <CurrencyInput
+                    value={item.unit_price}
+                    onChange={(val) => updateItem(item.key, { unit_price: val })}
+                    className="min-h-[44px]"
+                  />
+                </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Harga Satuan</label>
-                <CurrencyInput
-                  value={item.unit_price}
-                  onChange={(val) => updateItem(item.key, { unit_price: val })}
-                  className="min-h-[44px]"
-                />
-              </div>
-            </div>
 
-            <p className="text-sm text-right font-semibold">
-              Subtotal: {formatCurrency(item.quantity * (Number(item.unit_price) || 0))}
-            </p>
-          </div>
-        ))}
+              <p className="text-sm text-right font-semibold">
+                Subtotal: {formatCurrency(item.quantity * (Number(item.unit_price) || 0))}
+              </p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex justify-between items-center pt-2 border-t border-border">

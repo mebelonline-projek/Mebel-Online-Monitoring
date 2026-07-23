@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase-client";
 import { Button } from "@/components/ui/button";
-import { LogOut, LayoutDashboard, Receipt, Wrench, Settings, Sun, Moon, FileText, Wallet, Users, Package } from "lucide-react";
+import { LogOut, LayoutDashboard, Receipt, Wrench, Settings, Sun, Moon, FileText, Wallet, Users, Package, Warehouse, Tags, Boxes, ArrowLeftRight } from "lucide-react";
 import { useTheme } from "@/providers/theme-provider";
 import { useEffect, useState } from "react";
 import { shouldPrefetchNav } from "@/lib/nav-prefetch";
@@ -21,6 +21,7 @@ interface UserProfile {
 
 const getDashboardHref = (role: string) => {
   if (role === "OWNER") return "/dashboard/owner";
+  if (role === "GUDANG") return "/gudang/stok";
   if (role === "KARYAWAN") return "/dashboard/karyawan";
   return "/dashboard";
 };
@@ -28,17 +29,27 @@ const getDashboardHref = (role: string) => {
 export function AppSidebar({ profile }: { profile: UserProfile }) {
   const { store } = useStore();
   const allNavItems = [
-    { label: "Dashboard", href: getDashboardHref(profile.role), icon: LayoutDashboard },
-    { label: "Transaksi", href: "/transaksi", icon: Receipt },
-    { label: "Pelanggan", href: "/customer", icon: Users },
-    { label: "Produk", href: "/produk", icon: Package },
+    { label: "Dashboard", href: getDashboardHref(profile.role), icon: LayoutDashboard, hideForGudang: true },
+    { label: "Transaksi", href: "/transaksi", icon: Receipt, hideForGudang: true },
+    { label: "Pelanggan", href: "/customer", icon: Users, hideForGudang: true },
+    { label: "Produk", href: "/produk", icon: Package, hideForGudang: true },
+    { label: "Gudang", href: "/gudang", icon: Warehouse, inventoryOnly: true },
+    { label: "Kategori", href: "/gudang/kategori", icon: Tags, gudangOnly: true },
+    { label: "Barang", href: "/gudang/barang", icon: Package, gudangOnly: true },
+    { label: "Stok", href: "/gudang/stok", icon: Boxes, gudangOnly: true },
+    { label: "Mutasi", href: "/gudang/mutasi", icon: ArrowLeftRight, gudangOnly: true },
     { label: "Piutang", href: "/piutang", icon: Wallet, ownerOnly: true },
-    { label: "Invoice", href: "/invoice", icon: FileText },
-    { label: "Biaya", href: "/operasional", icon: Wrench },
+    { label: "Invoice", href: "/invoice", icon: FileText, hideForGudang: true },
+    { label: "Biaya", href: "/operasional", icon: Wrench, hideForGudang: true },
     { label: "Setelan", href: "/pengaturan", icon: Settings, ownerOnly: true },
   ];
   const navItems = allNavItems.filter((item) => {
+    if (profile.role === "GUDANG") {
+      return Boolean(item.inventoryOnly || item.gudangOnly);
+    }
+    if (item.gudangOnly) return false;
     if (item.ownerOnly && profile.role !== "OWNER") return false;
+    if (item.inventoryOnly && profile.role !== "OWNER") return false;
     return true;
   });
   const pathname = usePathname();
@@ -117,7 +128,11 @@ export function AppSidebar({ profile }: { profile: UserProfile }) {
           <div className="min-w-0">
             <p className="text-sm font-bold truncate text-sidebar-foreground">{profile.name}</p>
             <p className="text-[10px] text-muted-foreground">
-              {profile.role === "OWNER" ? "Owner Profile" : profile.role}
+              {profile.role === "OWNER"
+                ? "Owner Profile"
+                : profile.role === "GUDANG"
+                  ? "Petugas Gudang"
+                  : profile.role}
             </p>
           </div>
         </div>
