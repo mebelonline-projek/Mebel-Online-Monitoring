@@ -15,8 +15,9 @@ const nextConfig: NextConfig = {
       "lucide-react",
       "recharts",
     ],
+    // 0 = soft-nav selalu fetch RSC baru (penting: transaksi Karyawan → dashboard Owner)
     staleTimes: {
-      dynamic: 120,
+      dynamic: 0,
       static: 300,
     },
     // Default 1MB — foto HP sering 3–8MB; kompres client + naikkan limit

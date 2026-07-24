@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TrendingUp, TrendingDown, DollarSign, Percent, ArrowRight } from "lucide-react";
+import { DashboardLiveRefresh } from "@/components/dashboard/dashboard-live-refresh";
 
 /** Selalu ambil data segar — KPI periode sensitif terhadap seed/transaksi baru */
 export const dynamic = "force-dynamic";
@@ -67,6 +68,39 @@ export default async function OwnerDashboardPage({ searchParams }: PageProps) {
 
   const netMarginDisplay = stats.revenue > 0 ? `${stats.netMargin}%` : "-";
 
+  return (
+    <>
+      <DashboardLiveRefresh />
+      <OwnerDashboardContent
+        stats={stats}
+        period={period}
+        netMarginDisplay={netMarginDisplay}
+        revenueSparkline={revenueSparkline}
+        grossProfitSparkline={grossProfitSparkline}
+        netProfitSparkline={netProfitSparkline}
+        marginSparkline={marginSparkline}
+      />
+    </>
+  );
+}
+
+function OwnerDashboardContent({
+  stats,
+  period,
+  netMarginDisplay,
+  revenueSparkline,
+  grossProfitSparkline,
+  netProfitSparkline,
+  marginSparkline,
+}: {
+  stats: DashboardStats;
+  period: PeriodType;
+  netMarginDisplay: string;
+  revenueSparkline: number[];
+  grossProfitSparkline: number[];
+  netProfitSparkline: number[];
+  marginSparkline: number[];
+}) {
   const kpiCards = [
     {
       title: "Omzet",

@@ -51,6 +51,12 @@ const CACHE_TAGS = {
   operational: "operational",
 } as const;
 
+function revalidateDashboardViews() {
+  revalidatePath("/dashboard/owner");
+  revalidatePath("/dashboard/karyawan");
+  revalidatePath("/transaksi");
+}
+
 // ============================================================
 // Types
 // ============================================================
@@ -290,9 +296,10 @@ export async function createTransaction(
       return { success: false, message: `Gagal membuat pembayaran: ${payError.message}` };
     }
 
-    // Invalidate cache — immediate expiry
+    // Invalidate cache — immediate expiry (tag + path agar soft-nav/PWA tidak pakai RSC lama)
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidateDashboardViews();
 
     return {
       success: true,
@@ -592,6 +599,7 @@ export async function updateTransaction(
     // Invalidate cache
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidateDashboardViews();
 
     return {
       success: true,
@@ -688,6 +696,7 @@ export async function voidTransaction(
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
     revalidateTag(CACHE_TAGS.invoices, { expire: 0 });
+    revalidateDashboardViews();
 
     return {
       success: true,
@@ -778,6 +787,7 @@ export async function deleteTransactionPermanent(
     // Invalidate cache
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
+    revalidateDashboardViews();
 
     return {
       success: true,
@@ -858,6 +868,7 @@ export async function addHppItem(
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
     revalidatePath(`/transaksi/${parsed.data.transaction_id}`);
+    revalidateDashboardViews();
 
     return {
       success: true,
@@ -926,6 +937,7 @@ export async function updateHppItem(
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
     revalidatePath(`/transaksi/${existing.transaction_id}`);
+    revalidateDashboardViews();
 
     return {
       success: true,
@@ -977,6 +989,7 @@ export async function deleteHppItem(id: string): Promise<ActionState> {
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
     revalidatePath(`/transaksi/${existing.transaction_id}`);
+    revalidateDashboardViews();
 
     return {
       success: true,
@@ -1188,6 +1201,7 @@ export async function addPayment(
     revalidateTag(CACHE_TAGS.dashboard, { expire: 0 });
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
     revalidateTag(CACHE_TAGS.invoices, { expire: 0 });
+    revalidateDashboardViews();
 
     const statusMsg = newStatus === "LUNAS" ? " — LUNAS ✅" : "";
 
