@@ -398,98 +398,100 @@ export function TransactionDetailClient({ transaction, profileRole, userId }: Pr
             </Card>
           )}
 
-          {/* HPP Items */}
-          <Card className="shadow-sm">
-            <CardContent className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-bold">
-                  HPP Items
-                  <span className="text-sm font-normal text-muted-foreground ml-2">
-                    (Total: {formatCurrency(totalHpp)})
-                  </span>
-                </h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push(`/transaksi/${displayTransaction.id}/hpp`)}
-                  className="gap-2"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Kelola HPP
-                </Button>
-              </div>
-
-              {displayTransaction.hpp_items.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center">
-                  <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                    <Package className="w-6 h-6 text-muted-foreground" />
-                  </div>
-                  <p className="text-muted-foreground">Belum ada item HPP</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Tambahkan biaya HPP untuk melihat estimasi laba
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="md:hidden space-y-2">
-                    {displayTransaction.hpp_items.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex justify-between items-start p-3 rounded-lg bg-accent/30 border border-border"
-                      >
-                        <div className="min-w-0">
-                          <p className="font-semibold">{item.name}</p>
-                          {item.note && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{item.note}</p>
-                          )}
-                        </div>
-                        <p className="font-semibold shrink-0 ml-2">{formatCurrency(item.amount)}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="hidden md:block">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Nama</TableHead>
-                          <TableHead>Jumlah</TableHead>
-                          <TableHead>Catatan</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {displayTransaction.hpp_items.map((item) => (
-                          <TableRow key={item.id}>
-                            <TableCell className="font-semibold">{item.name}</TableCell>
-                            <TableCell>{formatCurrency(item.amount)}</TableCell>
-                            <TableCell className="text-muted-foreground text-sm">
-                              {item.note || "—"}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </>
-              )}
-
-              {displayTransaction.hpp_items.length > 0 && (
-                <div className="mt-4 p-4 rounded-lg bg-accent/30 border border-border">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Estimasi Laba Kotor:</span>
-                    <span
-                      className={`font-bold ${
-                        estimatedProfit >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-destructive"
-                      }`}
-                    >
-                      {formatCurrency(estimatedProfit)}
+          {/* HPP Items — Owner only */}
+          {isOwner && (
+            <Card className="shadow-sm">
+              <CardContent className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold">
+                    HPP Items
+                    <span className="text-sm font-normal text-muted-foreground ml-2">
+                      (Total: {formatCurrency(totalHpp)})
                     </span>
-                  </div>
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push(`/transaksi/${displayTransaction.id}/hpp`)}
+                    className="gap-2"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Kelola HPP
+                  </Button>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+
+                {displayTransaction.hpp_items.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                      <Package className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground">Belum ada item HPP</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Tambahkan biaya HPP untuk melihat estimasi laba
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="md:hidden space-y-2">
+                      {displayTransaction.hpp_items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex justify-between items-start p-3 rounded-lg bg-accent/30 border border-border"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-semibold">{item.name}</p>
+                            {item.note && (
+                              <p className="text-xs text-muted-foreground mt-0.5">{item.note}</p>
+                            )}
+                          </div>
+                          <p className="font-semibold shrink-0 ml-2">{formatCurrency(item.amount)}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nama</TableHead>
+                            <TableHead>Jumlah</TableHead>
+                            <TableHead>Catatan</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {displayTransaction.hpp_items.map((item) => (
+                            <TableRow key={item.id}>
+                              <TableCell className="font-semibold">{item.name}</TableCell>
+                              <TableCell>{formatCurrency(item.amount)}</TableCell>
+                              <TableCell className="text-muted-foreground text-sm">
+                                {item.note || "—"}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </>
+                )}
+
+                {displayTransaction.hpp_items.length > 0 && (
+                  <div className="mt-4 p-4 rounded-lg bg-accent/30 border border-border">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Estimasi Laba Kotor:</span>
+                      <span
+                        className={`font-bold ${
+                          estimatedProfit >= 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-destructive"
+                        }`}
+                      >
+                        {formatCurrency(estimatedProfit)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Column — Pembayaran & Status */}

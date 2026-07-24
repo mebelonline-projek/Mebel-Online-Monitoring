@@ -8,6 +8,7 @@ import { LogOut, LayoutDashboard, Receipt, Wrench, Settings, Sun, Moon, FileText
 import { useTheme } from "@/providers/theme-provider";
 import { useEffect, useState } from "react";
 import { shouldPrefetchNav } from "@/lib/nav-prefetch";
+import { getDashboardHref } from "@/lib/dashboard-href";
 import { StoreLogo } from "@/components/shared/store-logo";
 import { useStore } from "@/components/providers/store-context";
 
@@ -18,13 +19,6 @@ interface UserProfile {
   role: string;
   avatar_url?: string;
 }
-
-const getDashboardHref = (role: string) => {
-  if (role === "OWNER") return "/dashboard/owner";
-  if (role === "GUDANG") return "/gudang/stok";
-  if (role === "KARYAWAN") return "/dashboard/karyawan";
-  return "/dashboard";
-};
 
 export function AppSidebar({ profile }: { profile: UserProfile }) {
   const { store } = useStore();

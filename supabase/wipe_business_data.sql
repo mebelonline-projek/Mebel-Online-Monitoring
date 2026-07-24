@@ -1,17 +1,29 @@
 -- ============================================================
--- WIPE BUSINESS DATA — Kosongkan data simulasi bisnis
+-- WIPE BUSINESS DATA — Kosongkan data seed/demo untuk produksi
 -- ============================================================
 -- Hapus: invoice, transaksi (+HPP/bayar/items), biaya, stok/mutasi,
 --        produk, kategori, pelanggan, gudang.
--- TETAP: auth.users, public.users, store_settings
+-- TETAP: auth.users, public.users, store_settings, bucket logos
 --
--- ⚠️ Hanya untuk DB lokal/dev. Backup dulu jika ragu.
--- Jalankan di Supabase SQL Editor.
+-- Foto produk: JANGAN DELETE storage.objects lewat SQL (diblok Supabase).
+--   Hapus manual di Dashboard → Storage → product-photos (atau Storage API).
+--
+-- Boleh dipakai untuk prep produksi ATAU reset QA lokal.
+-- ⚠️ Backup / catat count dulu jika ragu. Tidak bisa di-undo.
+-- Jalankan di Supabase SQL Editor (proyek yang dituju).
+-- JANGAN jalankan seed_*.sql lagi di produksi setelah ini.
 -- ============================================================
 
 DO $$
 DECLARE
   n INT;
+  v_tx INT;
+  v_products INT;
+  v_customers INT;
+  v_invoices INT;
+  v_op INT;
+  v_users INT;
+  v_photos INT;
 BEGIN
   -- Invoice
   DELETE FROM public.invoice_items;
@@ -37,7 +49,7 @@ BEGIN
     RAISE NOTICE 'transaction_items: %', n;
   END IF;
 
-  -- Inventori movements (sebelum transactions jika ada FK reference — tidak wajib)
+  -- Inventori movements (sebelum products/warehouses)
   IF to_regclass('public.stock_movements') IS NOT NULL THEN
     DELETE FROM public.stock_movements;
     GET DIAGNOSTICS n = ROW_COUNT;
@@ -78,6 +90,36 @@ BEGIN
     RAISE NOTICE 'warehouses: %', n;
   END IF;
 
-  RAISE NOTICE '✅ WIPE SELESAI. users & store_settings tetap.';
-  RAISE NOTICE 'Cek: SELECT COUNT(*) FROM transactions; — harus 0';
+  -- Verifikasi
+  SELECT COUNT(*) INTO v_tx FROM public.transactions;
+  SELECT COUNT(*) INTO v_products FROM public.products;
+  SELECT COUNT(*) INTO v_customers FROM public.customers;
+  SELECT COUNT(*) INTO v_invoices FROM public.invoices;
+  SELECT COUNT(*) INTO v_op FROM public.operational_costs;
+  SELECT COUNT(*) INTO v_users FROM public.users;
+
+  IF to_regclass('storage.objects') IS NOT NULL THEN
+    SELECT COUNT(*) INTO v_photos
+    FROM storage.objects
+    WHERE bucket_id = 'product-photos';
+  ELSE
+    v_photos := 0;
+  END IF;
+
+  RAISE NOTICE '✅ WIPE SELESAI. users & store_settings & logos tetap.';
+  RAISE NOTICE 'Verifikasi — tx:%, products:%, customers:%, invoices:%, op_costs:%, users:%',
+    v_tx, v_products, v_customers, v_invoices, v_op, v_users;
+  RAISE NOTICE 'Harapan: semua count bisnis = 0, users > 0';
+  IF v_photos > 0 THEN
+    RAISE NOTICE '⚠️ Masih ada % file di storage product-photos — hapus manual di Dashboard → Storage.', v_photos;
+  END IF;
 END $$;
+
+-- Query verifikasi manual (jalankan terpisah jika perlu):
+-- SELECT
+--   (SELECT COUNT(*) FROM transactions) AS tx,
+--   (SELECT COUNT(*) FROM products) AS products,
+--   (SELECT COUNT(*) FROM customers) AS customers,
+--   (SELECT COUNT(*) FROM invoices) AS invoices,
+--   (SELECT COUNT(*) FROM operational_costs) AS op_costs,
+--   (SELECT COUNT(*) FROM users) AS users;

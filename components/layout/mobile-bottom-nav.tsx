@@ -15,13 +15,7 @@ import {
 } from "lucide-react";
 import { MobileNavMenu } from "@/components/layout/mobile-nav-menu";
 import { shouldPrefetchNav } from "@/lib/nav-prefetch";
-
-const getDashboardHref = (role: string) => {
-  if (role === "OWNER") return "/dashboard/owner";
-  if (role === "GUDANG") return "/gudang/stok";
-  if (role === "KARYAWAN") return "/dashboard/karyawan";
-  return "/dashboard";
-};
+import { getDashboardHref } from "@/lib/dashboard-href";
 
 export function MobileBottomNav({ role }: { role: string }) {
   const pathname = usePathname();

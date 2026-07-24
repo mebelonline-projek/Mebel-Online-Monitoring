@@ -810,6 +810,11 @@ export async function addHppItem(
     const user = await getCurrentUser();
     if (!user) return { success: false, message: "Anda harus login" };
 
+    const profile = await getUserProfile();
+    if (!profile || profile.role !== "OWNER") {
+      return { success: false, message: "Hanya Owner yang dapat mengelola HPP" };
+    }
+
     const supabase = await createServerSupabaseClient();
 
     const { data: tx, error: txError } = await supabase
@@ -884,6 +889,11 @@ export async function updateHppItem(
     const user = await getCurrentUser();
     if (!user) return { success: false, message: "Anda harus login" };
 
+    const profile = await getUserProfile();
+    if (!profile || profile.role !== "OWNER") {
+      return { success: false, message: "Hanya Owner yang dapat mengelola HPP" };
+    }
+
     const supabase = await createServerSupabaseClient();
 
     const { data: existing, error: checkError } = await supabase
@@ -933,6 +943,11 @@ export async function deleteHppItem(id: string): Promise<ActionState> {
   try {
     const user = await getCurrentUser();
     if (!user) return { success: false, message: "Anda harus login" };
+
+    const profile = await getUserProfile();
+    if (!profile || profile.role !== "OWNER") {
+      return { success: false, message: "Hanya Owner yang dapat mengelola HPP" };
+    }
 
     const supabase = await createServerSupabaseClient();
 

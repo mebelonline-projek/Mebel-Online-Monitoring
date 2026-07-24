@@ -1,8 +1,8 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-client";
+import { getDashboardHref } from "@/lib/dashboard-href";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { siteConfig } from "@/config/site";
@@ -15,7 +15,6 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [storeName, setStoreName] = useState<string>(siteConfig.name);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
-  const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
@@ -41,7 +40,19 @@ export default function LoginPage() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      window.location.href = '/dashboard';
+
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData.user?.id;
+      let role: string | null = null;
+      if (userId) {
+        const { data: profile } = await supabase
+          .from("users")
+          .select("role")
+          .eq("id", userId)
+          .maybeSingle();
+        role = profile?.role ?? null;
+      }
+      window.location.href = getDashboardHref(role);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login gagal';
       setError(message);

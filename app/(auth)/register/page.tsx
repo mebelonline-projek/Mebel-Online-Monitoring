@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase-client";
+import { getDashboardHref } from "@/lib/dashboard-href";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -82,9 +83,8 @@ export default function RegisterPage() {
         return;
       }
 
-      // 4. Tunggu session terbentuk, lalu redirect penuh
-      await new Promise((r) => setTimeout(r, 500));
-      window.location.href = "/dashboard";
+      // 4. Register publik selalu membuat OWNER — redirect langsung
+      window.location.href = getDashboardHref("OWNER");
     } catch {
       setError("Terjadi kesalahan. Silakan coba lagi.");
     } finally {

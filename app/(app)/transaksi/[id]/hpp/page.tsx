@@ -20,6 +20,11 @@ export default async function KelolaHppPage({
   if (!profile) redirect("/login");
 
   const { id } = await params;
+
+  if (profile.role !== "OWNER") {
+    redirect(`/transaksi/${id}`);
+  }
+
   const supabase = await createServerSupabaseClient();
 
   // Fetch transaksi info

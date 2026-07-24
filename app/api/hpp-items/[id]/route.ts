@@ -5,12 +5,31 @@
 import { NextResponse } from "next/server";
 import { deleteHppItem, updateHppItem } from "@/lib/transactions";
 import { requireApiAuth } from "@/lib/api-auth";
+import { getUserProfile } from "@/lib/supabase-server";
+
+async function requireOwner() {
+  const auth = await requireApiAuth();
+  if (auth.error) return auth;
+
+  const profile = await getUserProfile();
+  if (!profile || profile.role !== "OWNER") {
+    return {
+      user: null as null,
+      error: NextResponse.json(
+        { success: false, message: "Hanya Owner yang dapat mengelola HPP" },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return auth;
+}
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireApiAuth();
+  const auth = await requireOwner();
   if (auth.error) return auth.error;
 
   try {
@@ -38,7 +57,7 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireApiAuth();
+  const auth = await requireOwner();
   if (auth.error) return auth.error;
 
   try {

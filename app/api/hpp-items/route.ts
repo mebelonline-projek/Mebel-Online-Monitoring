@@ -7,10 +7,19 @@
 import { NextResponse } from "next/server";
 import { addHppItem } from "@/lib/transactions";
 import { requireApiAuth } from "@/lib/api-auth";
+import { getUserProfile } from "@/lib/supabase-server";
 
 export async function POST(request: Request) {
   const auth = await requireApiAuth();
   if (auth.error) return auth.error;
+
+  const profile = await getUserProfile();
+  if (!profile || profile.role !== "OWNER") {
+    return NextResponse.json(
+      { success: false, message: "Hanya Owner yang dapat mengelola HPP" },
+      { status: 403 }
+    );
+  }
 
   try {
     const body = await request.json();

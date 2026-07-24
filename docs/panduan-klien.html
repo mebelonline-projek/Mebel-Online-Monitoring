@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Buku Panduan — Mebel Online Monitoring</title>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #555;
+      --line: #ddd;
+      --accent: #1e4d3a;
+      --bg-soft: #f4f7f5;
+      --warn: #7a4a00;
+      --warn-bg: #fff8e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 11pt;
+      line-height: 1.55;
+      color: var(--ink);
+      background: #fff;
+    }
+    .page {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 32px 40px 64px;
+    }
+    h1 {
+      font-size: 26pt;
+      color: var(--accent);
+      margin: 0 0 8px;
+      line-height: 1.2;
+    }
+    h2 {
+      font-size: 15pt;
+      color: var(--accent);
+      border-bottom: 2px solid var(--accent);
+      padding-bottom: 6px;
+      margin: 36px 0 14px;
+      page-break-after: avoid;
+    }
+    h3 {
+      font-size: 12pt;
+      margin: 22px 0 8px;
+      color: #222;
+      page-break-after: avoid;
+    }
+    p { margin: 0 0 10px; }
+    .subtitle { color: var(--muted); font-size: 12pt; margin-bottom: 24px; }
+    .meta {
+      background: var(--bg-soft);
+      border-left: 4px solid var(--accent);
+      padding: 12px 16px;
+      margin: 16px 0 28px;
+      font-size: 10pt;
+    }
+    ol, ul { margin: 0 0 12px; padding-left: 22px; }
+    li { margin-bottom: 4px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 16px;
+      font-size: 10pt;
+      page-break-inside: avoid;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 7px 9px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--bg-soft); color: var(--accent); }
+    .tip, .warn, .ingat {
+      padding: 10px 14px;
+      margin: 12px 0;
+      border-radius: 6px;
+      font-size: 10pt;
+      page-break-inside: avoid;
+    }
+    .tip { background: #eef6f1; border: 1px solid #c5ddd0; }
+    .warn { background: var(--warn-bg); border: 1px solid #efd9a8; color: var(--warn); }
+    .ingat { background: #f7f7f7; border: 1px solid #e0e0e0; }
+    .cover {
+      text-align: center;
+      padding: 80px 20px 60px;
+      page-break-after: always;
+    }
+    .cover h1 { font-size: 32pt; margin-bottom: 12px; }
+    .cover .brand { font-size: 14pt; color: var(--accent); font-weight: 600; letter-spacing: 0.02em; }
+    .toc a { color: var(--accent); text-decoration: none; }
+    .toc li { margin-bottom: 6px; }
+    .step-title { font-weight: 600; margin-top: 8px; }
+    footer.note {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      font-size: 9pt;
+      color: var(--muted);
+    }
+    @media print {
+      body { font-size: 10.5pt; }
+      .page { padding: 0; max-width: none; }
+      .no-print { display: none !important; }
+      a { color: inherit; text-decoration: none; }
+      h2 { break-after: avoid; }
+      table, .tip, .warn, .ingat { break-inside: avoid; }
+    }
+    .print-bar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--accent);
+      color: #fff;
+      padding: 10px 16px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+    .print-bar button {
+      background: #fff;
+      color: var(--accent);
+      border: 0;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="print-bar no-print">
+    <span>Buku Panduan Klien — buka di browser, lalu klik tombol untuk simpan PDF</span>
+    <button type="button" onclick="window.print()">Cetak / Simpan PDF</button>
+  </div>
+
+  <div class="page">
+    <!-- COVER -->
+    <section class="cover">
+      <p class="brand">MEBEL ONLINE MONITORING</p>
+      <h1>Buku Panduan Pengguna</h1>
+      <p class="subtitle">
+        Panduan lengkap memakai aplikasi monitoring toko furnitur<br />
+        untuk Owner, Karyawan (Kasir), dan Petugas Gudang
+      </p>
+      <div class="meta" style="text-align:left; display:inline-block; max-width:420px;">
+        Bahasa sederhana · Langkah demi langkah<br />
+        Versi panduan: Juli 2026
+      </div>
+    </section>
+
+    <!-- TOC -->
+    <h2>Daftar Isi</h2>
+    <ol class="toc">
+      <li><a href="#s1">Apa itu aplikasi ini?</a></li>
+      <li><a href="#s2">Siapa yang memakai apa? (3 jenis akun)</a></li>
+      <li><a href="#s3">Cara masuk, lupa password, dan keluar</a></li>
+      <li><a href="#s4">Mengenal menu di layar</a></li>
+      <li><a href="#s5">Persiapan pertama kali (Owner)</a></li>
+      <li><a href="#s6">Pelanggan</a></li>
+      <li><a href="#s7">Gudang &amp; barang (stok)</a></li>
+      <li><a href="#s8">Kasir: buat transaksi penjualan</a></li>
+      <li><a href="#s9">Pelunasan (bayar sisa DP)</a></li>
+      <li><a href="#s10">Nota &amp; Invoice (beda!)</a></li>
+      <li><a href="#s11">HPP (biaya pokok) &amp; laba</a></li>
+      <li><a href="#s12">Dashboard: lihat omzet &amp; pekerjaan hari ini</a></li>
+      <li><a href="#s13">Piutang</a></li>
+      <li><a href="#s14">Biaya operasional</a></li>
+      <li><a href="#s15">Pengaturan toko &amp; kelola karyawan</a></li>
+      <li><a href="#s16">Hal penting yang sering bikin bingung</a></li>
+      <li><a href="#s17">Jika ada masalah</a></li>
+    </ol>
+
+    <!-- 1 -->
+    <h2 id="s1">1. Apa itu aplikasi ini?</h2>
+    <p>
+      Aplikasi ini membantu toko furnitur Anda mencatat <strong>penjualan</strong>,
+      <strong>pembayaran</strong>, <strong>stok gudang</strong>, dan
+      <strong>keuangan</strong> di satu tempat.
+    </p>
+    <p>Dengan aplikasi ini Anda bisa:</p>
+    <ul>
+      <li>Mencatat transaksi kasir (lunas sekaligus atau DP / uang muka)</li>
+      <li>Melihat siapa yang masih punya sisa bayar (piutang)</li>
+      <li>Mencetak nota / menyimpan PDF untuk pelanggan</li>
+      <li>Mengatur stok barang di beberapa gudang</li>
+      <li>Melihat omzet dan laba di dashboard (khusus Owner)</li>
+    </ul>
+    <div class="tip">
+      <strong>Tips:</strong> Di HP, tambahkan aplikasi ke layar utama (PWA) agar terasa seperti aplikasi biasa.
+    </div>
+
+    <!-- 2 -->
+    <h2 id="s2">2. Siapa yang memakai apa? (3 jenis akun)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Jenis akun</th>
+          <th>Untuk siapa</th>
+          <th>Bisa apa</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Owner</strong></td>
+          <td>Pemilik toko</td>
+          <td>Semua fitur: kasir, keuangan, gudang, pengaturan, batalkan transaksi, kelola karyawan</td>
+        </tr>
+        <tr>
+          <td><strong>Karyawan</strong></td>
+          <td>Kasir / admin toko</td>
+          <td>Kasir, pelanggan, transaksi, invoice, biaya operasional. Tidak bisa buka gudang &amp; pengaturan</td>
+        </tr>
+        <tr>
+          <td><strong>Gudang</strong></td>
+          <td>Petugas stok</td>
+          <td>Hanya inventori: gudang, kategori, barang, stok, mutasi. Tidak bisa kasir &amp; keuangan</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="ingat">
+      Setelah login, sistem otomatis mengarahkan Anda ke halaman yang sesuai peran.
+    </div>
+
+    <!-- 3 -->
+    <h2 id="s3">3. Cara masuk, lupa password, dan keluar</h2>
+    <h3>Masuk</h3>
+    <ol>
+      <li>Buka alamat aplikasi yang diberikan (di browser HP atau komputer).</li>
+      <li>Isi <strong>Email</strong> dan <strong>Password</strong>.</li>
+      <li>Klik <strong>Masuk</strong>.</li>
+    </ol>
+    <h3>Lupa password</h3>
+    <ol>
+      <li>Di halaman login, klik <strong>Lupa password?</strong></li>
+      <li>Masukkan email akun Anda → <strong>Kirim Link Reset</strong>.</li>
+      <li>Buka email (cek juga folder spam) → ikuti tautan untuk membuat password baru.</li>
+    </ol>
+    <h3>Keluar</h3>
+    <p>Klik <strong>Keluar</strong> di menu samping (komputer) atau menu atas/bawah (HP). Di halaman Pengaturan Owner juga ada tombol Logout.</p>
+
+    <!-- 4 -->
+    <h2 id="s4">4. Mengenal menu di layar</h2>
+    <h3>Di komputer (menu kiri)</h3>
+    <table>
+      <thead>
+        <tr><th>Menu</th><th>Fungsi singkat</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Dashboard</td><td>Ringkasan angka (Owner) atau pekerjaan harian (Karyawan)</td></tr>
+        <tr><td>Transaksi</td><td>Daftar semua penjualan</td></tr>
+        <tr><td>Pelanggan</td><td>Data pembeli</td></tr>
+        <tr><td>Produk</td><td>Katalog untuk kasir (lihat saja) — tambah barang di menu Gudang</td></tr>
+        <tr><td>Gudang</td><td>Stok &amp; inventori (Owner / Petugas Gudang)</td></tr>
+        <tr><td>Piutang</td><td>Yang belum lunas (Owner)</td></tr>
+        <tr><td>Invoice</td><td>Surat tagihan formal</td></tr>
+        <tr><td>Biaya</td><td>Biaya operasional toko</td></tr>
+        <tr><td>Setelan</td><td>Info toko, logo, kelola user (Owner)</td></tr>
+      </tbody>
+    </table>
+    <h3>Di HP</h3>
+    <ul>
+      <li>Tombol bawah: Home, Transaksi, <strong>Kasir</strong> (tengah), Pelanggan, Menu.</li>
+      <li>Petugas Gudang: Stok, Barang, Mutasi, Gudang, Menu.</li>
+    </ul>
+    <div class="tip">
+      <strong>Tips kasir di HP:</strong> paling cepat lewat tombol bulat <strong>Kasir</strong> di tengah.
+    </div>
+
+    <!-- 5 -->
+    <h2 id="s5">5. Persiapan pertama kali (Owner)</h2>
+    <p>Lakukan sekali di awal sebelum jualan sehari-hari:</p>
+    <ol>
+      <li><strong>Setelan → Informasi Toko</strong> — isi nama toko, alamat, telepon; unggah logo (maks. 2MB).</li>
+      <li><strong>Setelan → Kelola User</strong> — buat akun Karyawan (kasir) dan/atau Gudang.</li>
+      <li><strong>Gudang</strong> — buat minimal 1 gudang (lokasi penyimpanan). Tandai gudang yang dipakai kasir (penjualan).</li>
+      <li><strong>Kategori</strong> — buat kategori barang (contoh: Sofa, Meja, Lemari).</li>
+      <li><strong>Barang</strong> — tambah barang + foto + stok awal.</li>
+      <li>Baru mulai jualan di <strong>Kasir</strong>.</li>
+    </ol>
+    <div class="warn">
+      <strong>Perhatian:</strong> Menu <strong>Produk</strong> bukan tempat menambah stok.
+      Tambah/edit barang &amp; stok hanya di <strong>Gudang</strong>.
+    </div>
+
+    <!-- 6 -->
+    <h2 id="s6">6. Pelanggan</h2>
+    <ol>
+      <li>Buka menu <strong>Pelanggan</strong>.</li>
+      <li>Klik <strong>Tambah Pelanggan</strong>.</li>
+      <li>Isi nama (wajib). Telepon, alamat, catatan boleh dikosongi.</li>
+      <li>Simpan.</li>
+    </ol>
+    <p>Pelanggan juga bisa ditambah langsung saat mengisi form Kasir.</p>
+    <div class="ingat">
+      Karyawan bisa menambah pelanggan. Mengubah atau menghapus data pelanggan biasanya hanya Owner.
+    </div>
+
+    <!-- 7 -->
+    <h2 id="s7">7. Gudang &amp; barang (stok)</h2>
+    <p>Hanya <strong>Owner</strong> dan <strong>Petugas Gudang</strong>.</p>
+
+    <h3>Gudang (lokasi)</h3>
+    <ol>
+      <li>Menu <strong>Gudang</strong> → <strong>Tambah Gudang</strong>.</li>
+      <li>Isi nama lokasi (contoh: Gudang Utama, Toko Depan).</li>
+    </ol>
+
+    <h3>Kategori</h3>
+    <ol>
+      <li>Buka <strong>Kategori</strong> → tambah nama kategori.</li>
+    </ol>
+
+    <h3>Barang + foto</h3>
+    <ol>
+      <li>Buka <strong>Barang</strong> → <strong>Tambah</strong>.</li>
+      <li>Isi nama, kategori, harga dasar, stok minimum (opsional), deskripsi.</li>
+      <li>Pilih foto dari HP/kamera → simpan. Foto otomatis dikompres sistem.</li>
+      <li>Klik thumbnail foto di daftar untuk melihat <strong>preview besar</strong>.</li>
+    </ol>
+
+    <h3>Stok</h3>
+    <p>Menu <strong>Stok</strong> menampilkan jumlah per barang di tiap gudang. Jika di bawah stok minimum, akan ada peringatan.</p>
+
+    <h3>Mutasi (masuk / keluar / pindah)</h3>
+    <ol>
+      <li>Buka <strong>Mutasi</strong>.</li>
+      <li>Pilih jenis:
+        <ul>
+          <li><strong>IN</strong> — barang masuk (beli/datang)</li>
+          <li><strong>OUT</strong> — barang keluar (bukan lewat kasir)</li>
+          <li><strong>TRANSFER</strong> — pindah antar gudang</li>
+        </ul>
+      </li>
+      <li>Isi jumlah &amp; keterangan → simpan. Riwayat tersimpan.</li>
+    </ol>
+    <div class="tip">
+      Saat penjualan di kasir, stok di gudang penjualan otomatis berkurang.
+      Jika stok kurang, transfer dulu ke gudang penjualan, baru jual.
+    </div>
+
+    <!-- 8 -->
+    <h2 id="s8">8. Kasir: buat transaksi penjualan</h2>
+    <ol>
+      <li>Buka <strong>Kasir</strong> (atau Transaksi → tambah baru).</li>
+      <li>Pilih / tambah <strong>Pelanggan</strong>.</li>
+      <li>Tambah item barang (dari katalog) atau deskripsi jual manual sesuai form.</li>
+      <li>Pilih cara bayar:
+        <ul>
+          <li><strong>Cash</strong> — langsung lunas</li>
+          <li><strong>DP (Uang Muka)</strong> — isi jumlah DP; sisanya dilunasi nanti</li>
+        </ul>
+      </li>
+      <li>Simpan. Status muncul: <strong>Lunas</strong> atau <strong>DP</strong>.</li>
+      <li>Opsional: lanjut <strong>Cetak Nota</strong>.</li>
+    </ol>
+    <p><strong>Status pembayaran:</strong> Lunas · DP · Menunggu Pelunasan · Batal</p>
+    <p><strong>Status pesanan</strong> (proses barang): Menunggu · Produksi · Siap Kirim · Selesai</p>
+
+    <h3>Jika salah input</h3>
+    <ul>
+      <li>Edit terbatas (biasanya hanya saat masih DP) — ikut petunjuk di layar.</li>
+      <li><strong>Batalkan</strong> (Owner): transaksi dibatalkan, jejak tetap ada, stok dikembalikan. Isi alasan singkat.</li>
+      <li><strong>Hapus</strong> (Owner): menghapus data — hati-hati, biasanya jarang dipakai.</li>
+    </ul>
+    <div class="warn">
+      <strong>Batalkan ≠ Hapus.</strong> Lebih aman memakai Batalkan agar riwayat tetap ada.
+    </div>
+
+    <!-- 9 -->
+    <h2 id="s9">9. Pelunasan (bayar sisa DP)</h2>
+    <ol>
+      <li>Buka transaksi yang statusnya <strong>DP</strong> atau <strong>Menunggu Pelunasan</strong>.</li>
+      <li>Klik <strong>Input Pelunasan</strong>.</li>
+      <li>Isi <strong>Jumlah Pembayaran</strong> (jangan melebihi sisa tagihan).</li>
+      <li>Simpan. Jika sudah penuh, status menjadi <strong>Lunas</strong>.</li>
+    </ol>
+    <p>Transaksi yang sudah Lunas atau Batal tidak bisa dilunasi lagi.</p>
+
+    <!-- 10 -->
+    <h2 id="s10">10. Nota &amp; Invoice (beda!)</h2>
+    <table>
+      <thead>
+        <tr><th></th><th>Nota</th><th>Invoice</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Apa</td>
+          <td>Bukti bayar untuk <strong>satu transaksi</strong></td>
+          <td>Surat tagihan formal (bisa beberapa transaksi DP)</td>
+        </tr>
+        <tr>
+          <td>Kapan</td>
+          <td>Setelah transaksi / pembayaran</td>
+          <td>Saat butuh tagihan resmi ke pelanggan</td>
+        </tr>
+        <tr>
+          <td>Cara</td>
+          <td>Detail transaksi → tombol <strong>Nota</strong> → Cetak / Simpan PDF</td>
+          <td>Menu <strong>Invoice</strong> → <strong>Buat Invoice</strong> → pilih transaksi → Unduh PDF / Cetak</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="ingat">
+      <strong>Ingat:</strong> Transaksi ≠ Nota ≠ Invoice. Nomor dan menu berbeda.
+      Yang sudah lunas biasanya cukup pakai <strong>Nota</strong>.
+    </div>
+
+    <!-- 11 -->
+    <h2 id="s11">11. HPP (biaya pokok) &amp; laba</h2>
+    <p>HPP = biaya yang Anda keluarkan untuk menghasilkan barang/jasa di transaksi itu (bahan, ongkos, dll).</p>
+    <ol>
+      <li>Buka detail transaksi → bagian HPP → <strong>Kelola HPP</strong>.</li>
+      <li>Tambah item biaya pokok (nama + nominal).</li>
+      <li>Sistem menghitung perkiraan laba kotor: harga jual − total HPP.</li>
+    </ol>
+    <div class="tip">
+      Tanpa HPP, dashboard Owner tetap jalan, tetapi angka <strong>laba</strong> kurang akurat.
+      Biasakan isi HPP setelah transaksi penting.
+    </div>
+
+    <!-- 12 -->
+    <h2 id="s12">12. Dashboard: lihat omzet &amp; pekerjaan hari ini</h2>
+    <h3>Owner — Ringkasan Keuangan</h3>
+    <ul>
+      <li>Filter: <strong>Hari / Minggu / Bulan / Tahun</strong></li>
+      <li>Angka penting: Omzet, Laba Kotor, Laba Bersih, Margin</li>
+      <li>Ada grafik dan daftar transaksi terkini</li>
+    </ul>
+    <h3>Karyawan — Dashboard Operasional</h3>
+    <ul>
+      <li>Transaksi hari ini, yang menunggu pelunasan, yang lunas hari ini</li>
+      <li>Pintasan cari / buat transaksi</li>
+    </ul>
+    <p>Petugas Gudang tidak punya dashboard keuangan — langsung ke menu stok.</p>
+
+    <!-- 13 -->
+    <h2 id="s13">13. Piutang</h2>
+    <p>Khusus <strong>Owner</strong>. Menu <strong>Piutang</strong> menampilkan transaksi yang belum lunas dan pintasan ke pelunasan.</p>
+    <p>Pakai menu ini untuk menagih sisa DP dengan cepat.</p>
+
+    <!-- 14 -->
+    <h2 id="s14">14. Biaya operasional</h2>
+    <p>Contoh: listrik, sewa, bensin, ATK — biaya toko yang bukan HPP per transaksi.</p>
+    <ol>
+      <li>Buka <strong>Biaya</strong> (di HP: Biaya Operasional).</li>
+      <li>Pilih bulan → <strong>Tambah Biaya</strong>.</li>
+      <li>Isi nama, kategori, jumlah, periode → simpan.</li>
+    </ol>
+    <p>Total biaya periode mengurangi <strong>laba bersih</strong> di dashboard Owner.</p>
+
+    <!-- 15 -->
+    <h2 id="s15">15. Pengaturan toko &amp; kelola karyawan</h2>
+    <p>Hanya <strong>Owner</strong>. Menu: <strong>Setelan</strong> (di HP kadang tertulis Pengaturan).</p>
+    <h3>Informasi Toko</h3>
+    <ul>
+      <li>Ubah nama, alamat, telepon toko</li>
+      <li>Upload logo (PNG/JPG/WebP, maks. 2MB) atau kembalikan logo default</li>
+    </ul>
+    <h3>Kelola User</h3>
+    <ul>
+      <li>Tambah karyawan: pilih peran <strong>Karyawan (kasir)</strong> atau <strong>Gudang (inventori)</strong></li>
+      <li>Ubah data / reset password jika diperlukan</li>
+    </ul>
+    <div class="warn">
+      Jangan bagikan akun Owner ke kasir. Buat akun Karyawan terpisah agar lebih aman.
+    </div>
+
+    <!-- 16 -->
+    <h2 id="s16">16. Hal penting yang sering bikin bingung</h2>
+    <ol>
+      <li><strong>Produk</strong> di menu ≠ tambah stok. Stok di <strong>Gudang → Barang</strong>.</li>
+      <li>Sebelum jualan, pastikan ada <strong>kategori</strong>, <strong>gudang</strong>, dan <strong>barang + stok</strong>.</li>
+      <li>Stok tidak cukup di kasir → transfer ke gudang penjualan dulu.</li>
+      <li>Tombol <strong>Nota</strong> di detail transaksi = cetak bukti bayar, bukan menu Invoice.</li>
+      <li><strong>Batalkan</strong> lebih aman daripada <strong>Hapus</strong>.</li>
+      <li>Pelunasan hanya untuk yang belum lunas.</li>
+      <li>Mode Gelap/Terang hanya tampilan — data tidak berubah.</li>
+      <li>Link reset password bisa masuk folder spam email.</li>
+      <li>Di WhatsApp dari detail transaksi: pastikan nomor pelanggan sudah diisi.</li>
+    </ol>
+
+    <!-- 17 -->
+    <h2 id="s17">17. Jika ada masalah</h2>
+    <table>
+      <thead>
+        <tr><th>Masalah</th><th>Coba ini dulu</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Tidak bisa login</td>
+          <td>Cek email/password, coba Lupa password, pastikan koneksi internet</td>
+        </tr>
+        <tr>
+          <td>Menu tidak muncul</td>
+          <td>Mungkin peran akun berbeda (Karyawan/Gudang tidak melihat semua menu Owner)</td>
+        </tr>
+        <tr>
+          <td>Tidak bisa jual (stok)</td>
+          <td>Cek Stok &amp; Mutasi; pastikan barang ada di gudang penjualan</td>
+        </tr>
+        <tr>
+          <td>Angka dashboard aneh</td>
+          <td>Cek filter Hari/Minggu/Bulan/Tahun; pastikan HPP &amp; biaya operasional terisi</td>
+        </tr>
+        <tr>
+          <td>Foto gagal unggah</td>
+          <td>Pastikan ukuran wajar; gunakan JPG/PNG; coba lagi dengan sinyal lebih stabil</td>
+        </tr>
+        <tr>
+          <td>Halaman error / blank</td>
+          <td>Refresh (hard refresh), coba browser lain, hubungi penyedia aplikasi</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="meta">
+      <strong>Kontak bantuan:</strong> hubungi pihak yang memasang aplikasi untuk Anda
+      (pengembang / admin teknis) beserta: akun yang dipakai, menu yang dibuka, dan foto layar error jika ada.
+    </div>
+
+    <footer class="note">
+      Buku panduan ini dibuat untuk pengguna non-teknis aplikasi <strong>Mebel Online Monitoring</strong>.
+      Fitur mengikuti versi aplikasi Juli 2026. Label menu di HP dan komputer bisa sedikit berbeda tetapi fungsinya sama.
+      <br /><br />
+      Cara membuat file PDF: buka file ini di Chrome/Edge → klik <strong>Cetak / Simpan PDF</strong> (atau Ctrl+P) → pilih destinasi <strong>Save as PDF</strong> / Microsoft Print to PDF.
+    </footer>
+  </div>
+</body>
+</html>
