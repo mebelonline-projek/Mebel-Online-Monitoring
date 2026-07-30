@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { SearchablePicker } from "@/components/shared/searchable-picker";
 import type { ProductRow } from "@/lib/products";
+import { productDisplayName } from "@/lib/inventory-helpers";
 import { Plus, Trash2 } from "lucide-react";
 
 export interface LineItem {
@@ -49,11 +50,19 @@ export function LineItemsEditor({
   const salesWh = warehouses.find((w) => w.is_sales_warehouse && w.is_active) || null;
   const activeWarehouses = warehouses.filter((w) => w.is_active);
 
-  const productOptions = products.map((p) => ({
-    id: p.id,
-    label: p.name,
-    sublabel: `${p.category} — ${formatCurrency(p.base_price)}`,
-  }));
+  const productOptions = products.map((p) => {
+    const label = productDisplayName(p);
+    const stockHint = (() => {
+      if (!salesWh) return formatCurrency(p.base_price);
+      const qty = getStockQty(stocks, p.id, salesWh.id);
+      return `${formatCurrency(p.base_price)} · stok ${qty}`;
+    })();
+    return {
+      id: p.id,
+      label,
+      sublabel: `${p.category} — ${stockHint}`,
+    };
+  });
 
   const updateItem = (key: string, patch: Partial<LineItem>) => {
     onChange(items.map((item) => (item.key === key ? { ...item, ...patch } : item)));

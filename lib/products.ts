@@ -21,6 +21,9 @@ export interface ProductRow {
   description: string | null;
   base_price: number;
   created_at: string;
+  parent_id?: string | null;
+  warna?: string | null;
+  ukuran?: string | null;
 }
 
 /** Delegasi ke inventori — wajib category_id + init warehouse_stocks. */
@@ -143,18 +146,37 @@ export async function getProductsList(
 ): Promise<ProductsListResult> {
   const supabase = await createServerSupabaseClient();
   const { q = "", page = 1, limit = 10 } = params;
-  const offset = (page - 1) * limit;
+
+  const { data: childLinks } = await supabase
+    .from("products")
+    .select("parent_id")
+    .not("parent_id", "is", null);
+  const shellIds = [
+    ...new Set(
+      (childLinks || [])
+        .map((c) => c.parent_id as string | null)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
 
   let query = supabase
     .from("products")
-    .select("id, name, category, category_id, description, base_price, created_at", {
-      count: "exact",
-    });
+    .select(
+      "id, name, category, category_id, description, base_price, created_at, parent_id, warna, ukuran",
+      { count: "exact" }
+    );
 
-  if (q) {
-    query = query.or(`name.ilike.%${q}%,category.ilike.%${q}%`);
+  if (shellIds.length > 0) {
+    query = query.not("id", "in", `(${shellIds.join(",")})`);
   }
 
+  if (q) {
+    query = query.or(
+      `name.ilike.%${q}%,category.ilike.%${q}%,warna.ilike.%${q}%,ukuran.ilike.%${q}%`
+    );
+  }
+
+  const offset = (page - 1) * limit;
   const { data, count, error } = await query
     .order("name", { ascending: true })
     .range(offset, offset + limit - 1);
@@ -175,12 +197,18 @@ export async function getProductsForPicker(): Promise<ProductRow[]> {
     const supabase = await createServerSupabaseClient();
     const { data, error } = await supabase
       .from("products")
-      .select("id, name, category, category_id, description, base_price, created_at")
+      .select(
+        "id, name, category, category_id, description, base_price, created_at, parent_id, warna, ukuran"
+      )
       .order("name", { ascending: true })
-      .limit(500);
+      .limit(800);
 
     if (error) return [];
-    return (data || []) as ProductRow[];
+    const rows = (data || []) as ProductRow[];
+    const shellIds = new Set(
+      rows.filter((p) => p.parent_id).map((p) => p.parent_id as string)
+    );
+    return rows.filter((p) => !shellIds.has(p.id));
   } catch {
     return [];
   }

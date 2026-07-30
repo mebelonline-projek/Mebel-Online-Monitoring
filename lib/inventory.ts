@@ -50,6 +50,16 @@ export type InventoryProductRow = {
   photo_url: string | null;
   description: string | null;
   created_at: string;
+  parent_id: string | null;
+  warna: string | null;
+  ukuran: string | null;
+};
+
+export type ProductVariantInput = {
+  warna?: string;
+  ukuran?: string;
+  base_price: number;
+  min_stock?: number;
 };
 
 export type StockRow = {
@@ -92,11 +102,34 @@ const inventoryProductBaseSchema = z.object({
   description: z.string().max(500).optional().or(z.literal("")),
 });
 
-/** Create: boleh isi gudang + stok awal */
+const variantRowSchema = z
+  .object({
+    warna: z.string().max(80).optional().or(z.literal("")),
+    ukuran: z.string().max(80).optional().or(z.literal("")),
+    base_price: z.coerce.number().min(0).max(999_999_999),
+    min_stock: z.coerce.number().int().min(0).max(999_999).optional(),
+  })
+  .refine(
+    (v) => Boolean(v.warna?.trim()) || Boolean(v.ukuran?.trim()),
+    { message: "Isi warna dan/atau ukuran untuk tiap varian" }
+  );
+
+/** Create: boleh isi gudang + stok awal; opsional daftar varian */
 const inventoryProductCreateSchema = inventoryProductBaseSchema.extend({
   warehouse_id: dbId("ID gudang tidak valid").optional().nullable().or(z.literal("")),
   initial_qty: z.coerce.number().int().min(0).max(999_999).optional(),
+  variants: z.array(variantRowSchema).optional(),
 });
+
+const inventoryVariantUpdateSchema = z.object({
+  warna: z.string().max(80).optional().or(z.literal("")),
+  ukuran: z.string().max(80).optional().or(z.literal("")),
+  base_price: z.coerce.number().min(0).max(999_999_999),
+  min_stock: z.coerce.number().int().min(0).max(999_999),
+}).refine(
+  (v) => Boolean(v.warna?.trim()) || Boolean(v.ukuran?.trim()),
+  { message: "Isi warna dan/atau ukuran" }
+);
 
 const movementSchema = z.object({
   type: z.enum(["IN", "OUT", "TRANSFER"]),
@@ -170,14 +203,35 @@ export async function getInventoryProducts(): Promise<InventoryProductRow[]> {
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase
     .from("products")
-    .select("id, name, category_id, category, base_price, unit, min_stock, photo_url, description, created_at")
+    .select(
+      "id, name, category_id, category, base_price, unit, min_stock, photo_url, description, created_at, parent_id, warna, ukuran"
+    )
     .order("name");
   if (error) throw new Error(error.message);
   return (data || []).map((p) => ({
     ...p,
     unit: p.unit || "pcs",
     min_stock: p.min_stock ?? 0,
+    parent_id: p.parent_id ?? null,
+    warna: p.warna ?? null,
+    ukuran: p.ukuran ?? null,
   }));
+}
+
+async function initZeroStockForProduct(
+  supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>,
+  productId: string
+): Promise<string | null> {
+  const { data: whs } = await supabase.from("warehouses").select("id").eq("is_active", true);
+  if (!whs?.length) return null;
+  const { error } = await supabase.from("warehouse_stocks").insert(
+    whs.map((w) => ({ warehouse_id: w.id, product_id: productId, qty: 0 }))
+  );
+  return error ? error.message : null;
+}
+
+function variantKey(warna: string, ukuran: string) {
+  return `${warna.trim().toLowerCase()}||${ukuran.trim().toLowerCase()}`;
 }
 
 export async function getWarehouseStocks(): Promise<StockRow[]> {
@@ -248,10 +302,17 @@ export async function createWarehouse(
     if (error) return { success: false, message: error.message };
     if (!data) return { success: false, message: "Gagal menambah gudang" };
 
-    const { data: products } = await supabase.from("products").select("id");
-    if (products?.length) {
+    const { data: products } = await supabase
+      .from("products")
+      .select("id, parent_id");
+    // Hanya leaf/standalone — parent shell tidak punya baris stok
+    const parentIds = new Set(
+      (products || []).filter((p) => p.parent_id).map((p) => p.parent_id as string)
+    );
+    const sellable = (products || []).filter((p) => !parentIds.has(p.id));
+    if (sellable.length) {
       await supabase.from("warehouse_stocks").insert(
-        products.map((p) => ({ warehouse_id: data.id, product_id: p.id, qty: 0 }))
+        sellable.map((p) => ({ warehouse_id: data.id, product_id: p.id, qty: 0 }))
       );
     }
 
@@ -423,9 +484,21 @@ export async function createInventoryProduct(
       return { success: false, message: msg };
     }
 
+    const variants = parsed.data.variants || [];
+    const hasVariants = variants.length > 0;
+
+    if (hasVariants) {
+      const keys = variants.map((v) =>
+        variantKey(v.warna?.trim() || "", v.ukuran?.trim() || "")
+      );
+      if (new Set(keys).size !== keys.length) {
+        return { success: false, message: "Ada varian duplikat (warna + ukuran sama)" };
+      }
+    }
+
     const initialQty = parsed.data.initial_qty ?? 0;
     const warehouseId = parsed.data.warehouse_id || null;
-    if (initialQty > 0 && !warehouseId) {
+    if (!hasVariants && initialQty > 0 && !warehouseId) {
       return { success: false, message: "Pilih gudang untuk stok awal" };
     }
 
@@ -440,16 +513,90 @@ export async function createInventoryProduct(
       return { success: false, message: "Kategori tidak ditemukan. Buat kategori dulu di menu Kategori." };
     }
 
+    const name = parsed.data.name.trim();
+
+    if (hasVariants) {
+      // Parent shell — tanpa stok
+      const { data: parent, error: parentErr } = await supabase
+        .from("products")
+        .insert({
+          name,
+          category_id: parsed.data.category_id,
+          category: cat.name || "LAINNYA",
+          base_price: parsed.data.base_price,
+          unit: "pcs",
+          min_stock: parsed.data.min_stock,
+          description: parsed.data.description?.trim() || null,
+          parent_id: null,
+          warna: null,
+          ukuran: null,
+          created_by: auth.data.userId,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (parentErr) return { success: false, message: parentErr.message };
+      if (!parent) return { success: false, message: "Gagal menambah produk" };
+
+      for (const v of variants) {
+        const { data: child, error: childErr } = await supabase
+          .from("products")
+          .insert({
+            name,
+            category_id: parsed.data.category_id,
+            category: cat.name || "LAINNYA",
+            base_price: v.base_price,
+            unit: "pcs",
+            min_stock: v.min_stock ?? parsed.data.min_stock,
+            description: parsed.data.description?.trim() || null,
+            parent_id: parent.id,
+            warna: v.warna?.trim() || null,
+            ukuran: v.ukuran?.trim() || null,
+            created_by: auth.data.userId,
+          })
+          .select("id")
+          .maybeSingle();
+
+        if (childErr || !child) {
+          await supabase.from("products").delete().eq("id", parent.id);
+          return {
+            success: false,
+            message: childErr?.message || "Gagal menambah varian",
+          };
+        }
+
+        const stockErr = await initZeroStockForProduct(supabase, child.id);
+        if (stockErr) {
+          await supabase.from("products").delete().eq("id", parent.id);
+          return {
+            success: false,
+            message: `Varian dibuat, tapi gagal inisialisasi stok: ${stockErr}`,
+          };
+        }
+      }
+
+      revalidateInventory();
+      return {
+        success: true,
+        data: { id: parent.id },
+        message: `Produk ditambahkan dengan ${variants.length} varian (stok 0 — isi via Mutasi IN)`,
+      };
+    }
+
+    // Standalone (tanpa varian)
     const { data, error } = await supabase
       .from("products")
       .insert({
-        name: parsed.data.name.trim(),
+        name,
         category_id: parsed.data.category_id,
         category: cat.name || "LAINNYA",
         base_price: parsed.data.base_price,
         unit: "pcs",
         min_stock: parsed.data.min_stock,
         description: parsed.data.description?.trim() || null,
+        parent_id: null,
+        warna: null,
+        ukuran: null,
         created_by: auth.data.userId,
       })
       .select("id")
@@ -458,21 +605,14 @@ export async function createInventoryProduct(
     if (error) return { success: false, message: error.message };
     if (!data) return { success: false, message: "Gagal menambah barang" };
 
-    // Stok 0 di semua gudang aktif (matriks stok lengkap)
-    const { data: whs } = await supabase.from("warehouses").select("id").eq("is_active", true);
-    if (whs?.length) {
-      const { error: stockErr } = await supabase.from("warehouse_stocks").insert(
-        whs.map((w) => ({ warehouse_id: w.id, product_id: data.id, qty: 0 }))
-      );
-      if (stockErr) {
-        return {
-          success: false,
-          message: `Barang dibuat, tapi gagal inisialisasi stok: ${stockErr.message}`,
-        };
-      }
+    const stockErr = await initZeroStockForProduct(supabase, data.id);
+    if (stockErr) {
+      return {
+        success: false,
+        message: `Barang dibuat, tapi gagal inisialisasi stok: ${stockErr}`,
+      };
     }
 
-    // Stok awal → mutasi IN ke gudang yang dipilih
     if (initialQty > 0 && warehouseId) {
       const admin = createAdminClient();
       const { error: inErr } = await admin.rpc("apply_stock_change", {
@@ -519,16 +659,31 @@ export async function updateInventoryProduct(
     if (!parsed.success) return { success: false, message: "Validasi gagal" };
 
     const supabase = await createServerSupabaseClient();
+    const { data: existing } = await supabase
+      .from("products")
+      .select("id, parent_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!existing) return { success: false, message: "Barang tidak ditemukan" };
+    if (existing.parent_id) {
+      return {
+        success: false,
+        message: "Ini varian — edit warna/ukuran/harga lewat Edit Varian",
+      };
+    }
+
     const { data: cat } = await supabase
       .from("product_categories")
       .select("name")
       .eq("id", parsed.data.category_id)
       .maybeSingle();
 
+    const name = parsed.data.name.trim();
     const { error } = await supabase
       .from("products")
       .update({
-        name: parsed.data.name.trim(),
+        name,
         category_id: parsed.data.category_id,
         category: cat?.name || "LAINNYA",
         base_price: parsed.data.base_price,
@@ -538,8 +693,176 @@ export async function updateInventoryProduct(
       .eq("id", id);
 
     if (error) return { success: false, message: error.message };
+
+    // Sync nama + kategori ke semua varian anak
+    await supabase
+      .from("products")
+      .update({
+        name,
+        category_id: parsed.data.category_id,
+        category: cat?.name || "LAINNYA",
+        description: parsed.data.description?.trim() || null,
+      })
+      .eq("parent_id", id);
+
     revalidateInventory();
     return { success: true, message: "Barang diperbarui" };
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : "Terjadi kesalahan" };
+  }
+}
+
+export async function addInventoryVariant(
+  parentId: string,
+  input: z.infer<typeof inventoryVariantUpdateSchema>
+): Promise<ActionState<{ id: string }>> {
+  try {
+    const auth = await requireInventoryWriter();
+    if (!auth.success) return auth;
+    const parsed = inventoryVariantUpdateSchema.safeParse(input);
+    if (!parsed.success) {
+      return { success: false, message: parsed.error.issues[0]?.message || "Validasi gagal" };
+    }
+
+    const supabase = await createServerSupabaseClient();
+    const { data: parent } = await supabase
+      .from("products")
+      .select("id, name, category_id, category, description, parent_id, min_stock")
+      .eq("id", parentId)
+      .maybeSingle();
+
+    if (!parent) return { success: false, message: "Produk tidak ditemukan" };
+    if (parent.parent_id) {
+      return { success: false, message: "Tidak bisa menambah varian ke dalam varian" };
+    }
+
+    const { data: existingChildren } = await supabase
+      .from("products")
+      .select("id")
+      .eq("parent_id", parentId);
+    const convertingStandalone = !existingChildren?.length;
+
+    if (convertingStandalone) {
+      const { data: parentStocks } = await supabase
+        .from("warehouse_stocks")
+        .select("qty")
+        .eq("product_id", parentId);
+      if (parentStocks?.some((s) => s.qty > 0)) {
+        return {
+          success: false,
+          message:
+            "Produk masih punya stok. Mutasi OUT sampai 0 dulu sebelum menambah varian, atau buat produk baru.",
+        };
+      }
+    }
+
+    const warna = parsed.data.warna?.trim() || "";
+    const ukuran = parsed.data.ukuran?.trim() || "";
+    const { data: siblings } = await supabase
+      .from("products")
+      .select("warna, ukuran")
+      .eq("parent_id", parentId);
+
+    const key = variantKey(warna, ukuran);
+    if (
+      (siblings || []).some(
+        (s) => variantKey(s.warna || "", s.ukuran || "") === key
+      )
+    ) {
+      return { success: false, message: "Varian dengan warna/ukuran ini sudah ada" };
+    }
+
+    const { data: child, error } = await supabase
+      .from("products")
+      .insert({
+        name: parent.name,
+        category_id: parent.category_id,
+        category: parent.category || "LAINNYA",
+        base_price: parsed.data.base_price,
+        unit: "pcs",
+        min_stock: parsed.data.min_stock,
+        description: parent.description,
+        parent_id: parentId,
+        warna: warna || null,
+        ukuran: ukuran || null,
+        created_by: auth.data.userId,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (error) return { success: false, message: error.message };
+    if (!child) return { success: false, message: "Gagal menambah varian" };
+
+    if (convertingStandalone) {
+      await supabase.from("warehouse_stocks").delete().eq("product_id", parentId);
+    }
+
+    const stockErr = await initZeroStockForProduct(supabase, child.id);
+    if (stockErr) {
+      await supabase.from("products").delete().eq("id", child.id);
+      return { success: false, message: `Gagal inisialisasi stok: ${stockErr}` };
+    }
+
+    revalidateInventory();
+    return { success: true, data: { id: child.id }, message: "Varian ditambahkan" };
+  } catch (e) {
+    return { success: false, message: e instanceof Error ? e.message : "Terjadi kesalahan" };
+  }
+}
+
+export async function updateInventoryVariant(
+  id: string,
+  input: z.infer<typeof inventoryVariantUpdateSchema>
+): Promise<ActionState> {
+  try {
+    const auth = await requireInventoryWriter();
+    if (!auth.success) return auth;
+    const parsed = inventoryVariantUpdateSchema.safeParse(input);
+    if (!parsed.success) {
+      return { success: false, message: parsed.error.issues[0]?.message || "Validasi gagal" };
+    }
+
+    const supabase = await createServerSupabaseClient();
+    const { data: existing } = await supabase
+      .from("products")
+      .select("id, parent_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!existing) return { success: false, message: "Varian tidak ditemukan" };
+    if (!existing.parent_id) {
+      return { success: false, message: "Ini bukan varian" };
+    }
+
+    const warna = parsed.data.warna?.trim() || "";
+    const ukuran = parsed.data.ukuran?.trim() || "";
+    const { data: siblings } = await supabase
+      .from("products")
+      .select("id, warna, ukuran")
+      .eq("parent_id", existing.parent_id);
+
+    const key = variantKey(warna, ukuran);
+    if (
+      (siblings || []).some(
+        (s) => s.id !== id && variantKey(s.warna || "", s.ukuran || "") === key
+      )
+    ) {
+      return { success: false, message: "Varian dengan warna/ukuran ini sudah ada" };
+    }
+
+    const { error } = await supabase
+      .from("products")
+      .update({
+        warna: warna || null,
+        ukuran: ukuran || null,
+        base_price: parsed.data.base_price,
+        min_stock: parsed.data.min_stock,
+      })
+      .eq("id", id);
+
+    if (error) return { success: false, message: error.message };
+    revalidateInventory();
+    return { success: true, message: "Varian diperbarui" };
   } catch (e) {
     return { success: false, message: e instanceof Error ? e.message : "Terjadi kesalahan" };
   }
@@ -608,30 +931,47 @@ export async function deleteInventoryProduct(id: string): Promise<ActionState> {
     if (!auth.success) return auth;
 
     const supabase = await createServerSupabaseClient();
-    const { data: stocks } = await supabase
-      .from("warehouse_stocks")
-      .select("qty")
-      .eq("product_id", id);
-
-    if (stocks?.some((s) => s.qty > 0)) {
-      return { success: false, message: "Masih ada stok. Mutasi OUT sampai 0 dulu sebelum hapus." };
-    }
-
     const { data: product } = await supabase
       .from("products")
-      .select("photo_url")
+      .select("id, photo_url, parent_id")
       .eq("id", id)
       .maybeSingle();
 
-    if (product?.photo_url?.includes("/product-photos/")) {
+    if (!product) return { success: false, message: "Barang tidak ditemukan" };
+
+    const { data: children } = await supabase
+      .from("products")
+      .select("id")
+      .eq("parent_id", id);
+
+    const idsToCheck = [id, ...(children || []).map((c) => c.id)];
+    const { data: stocks } = await supabase
+      .from("warehouse_stocks")
+      .select("qty, product_id")
+      .in("product_id", idsToCheck);
+
+    if (stocks?.some((s) => s.qty > 0)) {
+      return {
+        success: false,
+        message: "Masih ada stok (termasuk varian). Mutasi OUT sampai 0 dulu sebelum hapus.",
+      };
+    }
+
+    if (product.photo_url?.includes("/product-photos/")) {
       const oldPath = product.photo_url.split("/product-photos/")[1]?.split("?")[0];
       if (oldPath) await supabase.storage.from("product-photos").remove([oldPath]);
     }
 
+    // CASCADE menghapus anak jika hapus parent; hapus eksplisit juga aman
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) return { success: false, message: error.message };
     revalidateInventory();
-    return { success: true, message: "Barang & foto dihapus permanen" };
+    return {
+      success: true,
+      message: children && children.length > 0
+        ? "Produk & semua variannya dihapus permanen"
+        : "Barang & foto dihapus permanen",
+    };
   } catch (e) {
     return { success: false, message: e instanceof Error ? e.message : "Terjadi kesalahan" };
   }

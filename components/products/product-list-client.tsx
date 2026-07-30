@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { deleteProduct, type ProductRow } from "@/lib/products";
 import { formatCurrency } from "@/lib/formatters";
+import { productDisplayName } from "@/lib/inventory-helpers";
 import { toast } from "sonner";
 import { invalidatePickerCache } from "@/lib/picker-client";
 import { Button } from "@/components/ui/button";
@@ -153,7 +154,7 @@ export function ProductListClient({
               <Card key={p.id} className="shadow-sm">
                 <CardContent className="p-4 space-y-2">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold">{p.name}</p>
+                    <p className="font-semibold">{productDisplayName(p)}</p>
                     <Badge variant="secondary">{p.category}</Badge>
                   </div>
                   <p className="font-bold text-primary">{formatCurrency(p.base_price)}</p>
@@ -191,7 +192,7 @@ export function ProductListClient({
               <TableBody>
                 {products.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell className="font-semibold">{p.name}</TableCell>
+                    <TableCell className="font-semibold">{productDisplayName(p)}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">{p.category}</Badge>
                     </TableCell>

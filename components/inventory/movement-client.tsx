@@ -9,7 +9,7 @@ import {
   type StockRow,
   type MovementRow,
 } from "@/lib/inventory";
-import { getStockQty } from "@/lib/inventory-helpers";
+import { getStockQty, isSellableProduct, productDisplayName } from "@/lib/inventory-helpers";
 import { formatDate } from "@/lib/formatters";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -67,9 +67,13 @@ export function MovementClient({
   const router = useRouter();
   const activeWarehouses = warehouses.filter((w) => w.is_active);
   const salesWh = activeWarehouses.find((w) => w.is_sales_warehouse);
+  const sellableProducts = useMemo(
+    () => products.filter((p) => isSellableProduct(p, products)),
+    [products]
+  );
 
   const [type, setType] = useState<FormMovementType>("IN");
-  const [productId, setProductId] = useState(products[0]?.id || "");
+  const [productId, setProductId] = useState(sellableProducts[0]?.id || "");
   const [fromId, setFromId] = useState(salesWh?.id || activeWarehouses[0]?.id || "");
   const [toId, setToId] = useState(
     activeWarehouses.find((w) => !w.is_sales_warehouse)?.id || activeWarehouses[0]?.id || ""
@@ -109,8 +113,11 @@ export function MovementClient({
   const warehouseName = (id: string | null) =>
     id ? warehouses.find((w) => w.id === id)?.name || id : "—";
 
-  const productName = (id: string | null) =>
-    id ? products.find((p) => p.id === id)?.name || id : "—";
+  const productName = (id: string | null) => {
+    if (!id) return "—";
+    const p = products.find((x) => x.id === id);
+    return p ? productDisplayName(p) : id;
+  };
 
   if (loadError) {
     return <p className="text-sm text-destructive">{loadError}</p>;
@@ -149,9 +156,9 @@ export function MovementClient({
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
               >
-                {products.map((p) => (
+                {sellableProducts.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {productDisplayName(p)}
                   </option>
                 ))}
               </select>

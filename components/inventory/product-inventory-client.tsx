@@ -1,18 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import {
   createInventoryProduct,
   updateInventoryProduct,
   deleteInventoryProduct,
   uploadProductPhoto,
+  addInventoryVariant,
+  updateInventoryVariant,
   type InventoryProductRow,
   type CategoryRow,
   type StockRow,
   type WarehouseRow,
 } from "@/lib/inventory";
-import { getTotalStock } from "@/lib/inventory-helpers";
+import {
+  getTotalStock,
+  isParentShellProduct,
+  productDisplayName,
+} from "@/lib/inventory-helpers";
 import { formatCurrency } from "@/lib/formatters";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -45,12 +51,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Package, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Package, Search, X } from "lucide-react";
 import Link from "next/link";
 
-const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4MB setelah kompres (aman untuk Vercel)
+const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
-/** Kompres foto di browser sebelum Server Action (default limit 1MB). */
 async function compressPhotoForUpload(file: File): Promise<File> {
   if (file.size <= 1_200_000) return file;
   const bitmap = await createImageBitmap(file);
@@ -86,6 +91,30 @@ type FormState = {
   description: string;
   warehouse_id: string;
   initial_qty: string;
+  has_variants: boolean;
+};
+
+type VariantDraft = {
+  key: string;
+  warna: string;
+  ukuran: string;
+  base_price: string;
+};
+
+type VariantEditState = {
+  id: string;
+  parentId: string;
+  warna: string;
+  ukuran: string;
+  base_price: string;
+  min_stock: string;
+};
+
+type ListGroup = {
+  key: string;
+  parent: InventoryProductRow;
+  variants: InventoryProductRow[];
+  isGroup: boolean;
 };
 
 function ProductThumb({
@@ -124,6 +153,15 @@ function ProductThumb({
   );
 }
 
+function newVariantDraft(basePrice = ""): VariantDraft {
+  return {
+    key: crypto.randomUUID(),
+    warna: "",
+    ukuran: "",
+    base_price: basePrice,
+  };
+}
+
 export function ProductInventoryClient({
   initialProducts,
   initialCategories,
@@ -156,7 +194,15 @@ export function ProductInventoryClient({
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** Kompres dimulai saat foto dipilih, supaya Simpan tidak menunggu. */
+  const [variantDrafts, setVariantDrafts] = useState<VariantDraft[]>([]);
+  const [variantEdit, setVariantEdit] = useState<VariantEditState | null>(null);
+  const [addVariantParent, setAddVariantParent] = useState<InventoryProductRow | null>(null);
+  const [addVariantForm, setAddVariantForm] = useState({
+    warna: "",
+    ukuran: "",
+    base_price: "",
+    min_stock: "0",
+  });
   const photoCompressRef = useRef<Promise<File> | null>(null);
 
   const pickPhoto = (file: File | null) => {
@@ -173,6 +219,7 @@ export function ProductInventoryClient({
     setPhotoPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [photoFile]);
+
   const [form, setForm] = useState<FormState>({
     name: "",
     category_id: initialCategories[0]?.id || "",
@@ -181,18 +228,82 @@ export function ProductInventoryClient({
     description: "",
     warehouse_id: defaultWarehouseId,
     initial_qty: "0",
+    has_variants: false,
   });
+
+  const categoryName = (p: InventoryProductRow) =>
+    initialCategories.find((c) => c.id === p.category_id)?.name || p.category || "";
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return initialProducts.filter((p) => {
-      const cat =
-        initialCategories.find((c) => c.id === p.category_id)?.name || p.category || "";
+      const cat = categoryName(p);
       if (categoryFilter && p.category_id !== categoryFilter) return false;
       if (!q) return true;
-      return p.name.toLowerCase().includes(q) || cat.toLowerCase().includes(q);
+      const hay = [p.name, cat, p.warna || "", p.ukuran || "", productDisplayName(p)]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
     });
   }, [initialProducts, initialCategories, searchQuery, categoryFilter]);
+
+  const groups = useMemo(() => {
+    const childrenByParent = new Map<string, InventoryProductRow[]>();
+    for (const p of filtered) {
+      if (!p.parent_id) continue;
+      const list = childrenByParent.get(p.parent_id) || [];
+      list.push(p);
+      childrenByParent.set(p.parent_id, list);
+    }
+
+    const result: ListGroup[] = [];
+    const used = new Set<string>();
+
+    for (const p of filtered) {
+      if (p.parent_id) continue;
+      const kids =
+        childrenByParent.get(p.id) ||
+        initialProducts.filter((c) => c.parent_id === p.id).filter((c) => {
+          // include siblings even if filter hit parent only
+          if (!searchQuery.trim() && !categoryFilter) return true;
+          return filtered.some((f) => f.id === c.id) || filtered.some((f) => f.id === p.id);
+        });
+
+      // When searching a variant, ensure parent group appears
+      const visibleKids = kids.filter((c) => filtered.some((f) => f.id === c.id));
+      if (visibleKids.length > 0 || isParentShellProduct(p, initialProducts)) {
+        for (const c of visibleKids) used.add(c.id);
+        used.add(p.id);
+        result.push({
+          key: p.id,
+          parent: p,
+          variants: visibleKids.length
+            ? visibleKids
+            : kids.filter((c) => filtered.some((f) => f.id === c.id || f.id === p.id)),
+          isGroup: true,
+        });
+      } else {
+        used.add(p.id);
+        result.push({ key: p.id, parent: p, variants: [], isGroup: false });
+      }
+    }
+
+    for (const p of filtered) {
+      if (!p.parent_id || used.has(p.id)) continue;
+      const parent =
+        initialProducts.find((x) => x.id === p.parent_id) || p;
+      result.push({
+        key: `orphan-${p.id}`,
+        parent,
+        variants: [p],
+        isGroup: true,
+      });
+    }
+
+    return result;
+  }, [filtered, initialProducts, searchQuery, categoryFilter]);
+
+  const isFiltered = Boolean(searchQuery.trim()) || Boolean(categoryFilter);
 
   const openCreate = () => {
     if (initialCategories.length === 0) {
@@ -213,26 +324,49 @@ export function ProductInventoryClient({
       description: "",
       warehouse_id: defaultWarehouseId,
       initial_qty: "0",
+      has_variants: false,
     });
+    setVariantDrafts([]);
     setDialogOpen(true);
   };
 
   const openEdit = (p: InventoryProductRow) => {
-    setEditing(p);
+    // Edit parent shell or standalone only
+    const target =
+      p.parent_id
+        ? initialProducts.find((x) => x.id === p.parent_id) || p
+        : p;
+    if (target.parent_id) {
+      openVariantEdit(target);
+      return;
+    }
+    setEditing(target);
     pickPhoto(null);
     setForm({
-      name: p.name,
-      category_id: p.category_id || initialCategories[0]?.id || "",
-      base_price: String(p.base_price),
-      min_stock: String(p.min_stock),
-      description: p.description || "",
+      name: target.name,
+      category_id: target.category_id || initialCategories[0]?.id || "",
+      base_price: String(target.base_price),
+      min_stock: String(target.min_stock),
+      description: target.description || "",
       warehouse_id: defaultWarehouseId,
       initial_qty: "0",
+      has_variants: isParentShellProduct(target, initialProducts),
     });
+    setVariantDrafts([]);
     setDialogOpen(true);
   };
 
-  /** Kompres + upload foto di background — tidak menahan tombol Simpan. */
+  const openVariantEdit = (v: InventoryProductRow) => {
+    setVariantEdit({
+      id: v.id,
+      parentId: v.parent_id || "",
+      warna: v.warna || "",
+      ukuran: v.ukuran || "",
+      base_price: String(v.base_price),
+      min_stock: String(v.min_stock),
+    });
+  };
+
   const uploadPhotoInBackground = (
     productId: string,
     file: File,
@@ -275,13 +409,33 @@ export function ProductInventoryClient({
       toast.error("Pilih kategori");
       return;
     }
+
+    if (!editing && form.has_variants) {
+      if (variantDrafts.length === 0) {
+        toast.error("Tambah minimal 1 varian");
+        return;
+      }
+      for (const v of variantDrafts) {
+        if (!v.warna.trim() && !v.ukuran.trim()) {
+          toast.error("Setiap varian wajib isi warna dan/atau ukuran");
+          return;
+        }
+      }
+      const keys = variantDrafts.map(
+        (v) => `${v.warna.trim().toLowerCase()}||${v.ukuran.trim().toLowerCase()}`
+      );
+      if (new Set(keys).size !== keys.length) {
+        toast.error("Ada varian duplikat (warna + ukuran sama)");
+        return;
+      }
+    }
+
     const initialQty = Math.max(0, Number(form.initial_qty) || 0);
-    if (!editing && initialQty > 0 && !form.warehouse_id) {
+    if (!editing && !form.has_variants && initialQty > 0 && !form.warehouse_id) {
       toast.error("Pilih gudang untuk stok awal");
       return;
     }
 
-    // Tangkap sebelum dialog ditutup
     const pendingPhoto = photoFile;
     const pendingCompress = photoCompressRef.current;
 
@@ -313,8 +467,16 @@ export function ProductInventoryClient({
 
     const result = await createInventoryProduct({
       ...payload,
-      warehouse_id: form.warehouse_id || null,
-      initial_qty: initialQty,
+      warehouse_id: form.has_variants ? null : form.warehouse_id || null,
+      initial_qty: form.has_variants ? 0 : initialQty,
+      variants: form.has_variants
+        ? variantDrafts.map((v) => ({
+            warna: v.warna.trim(),
+            ukuran: v.ukuran.trim(),
+            base_price: Number(v.base_price) || Number(form.base_price) || 0,
+            min_stock: Math.max(0, Number(form.min_stock) || 0),
+          }))
+        : undefined,
     });
     setBusy(false);
     if (!result.success) {
@@ -343,16 +505,69 @@ export function ProductInventoryClient({
     router.refresh();
   };
 
+  const handleSaveVariantEdit = async () => {
+    if (!variantEdit) return;
+    if (!variantEdit.warna.trim() && !variantEdit.ukuran.trim()) {
+      toast.error("Isi warna dan/atau ukuran");
+      return;
+    }
+    setBusy(true);
+    const result = await updateInventoryVariant(variantEdit.id, {
+      warna: variantEdit.warna,
+      ukuran: variantEdit.ukuran,
+      base_price: Number(variantEdit.base_price) || 0,
+      min_stock: Math.max(0, Number(variantEdit.min_stock) || 0),
+    });
+    setBusy(false);
+    if (!result.success) {
+      toast.error(result.message);
+      return;
+    }
+    toast.success(result.message);
+    setVariantEdit(null);
+    router.refresh();
+  };
+
+  const handleAddVariant = async () => {
+    if (!addVariantParent) return;
+    if (!addVariantForm.warna.trim() && !addVariantForm.ukuran.trim()) {
+      toast.error("Isi warna dan/atau ukuran");
+      return;
+    }
+    setBusy(true);
+    const result = await addInventoryVariant(addVariantParent.id, {
+      warna: addVariantForm.warna,
+      ukuran: addVariantForm.ukuran,
+      base_price: Number(addVariantForm.base_price) || addVariantParent.base_price,
+      min_stock: Math.max(0, Number(addVariantForm.min_stock) || 0),
+    });
+    setBusy(false);
+    if (!result.success) {
+      toast.error(result.message);
+      return;
+    }
+    toast.success(result.message);
+    setAddVariantParent(null);
+    router.refresh();
+  };
+
   if (loadError) {
     return <p className="text-sm text-destructive">{loadError}</p>;
   }
+
+  const renderVariantBadges = (v: InventoryProductRow) => (
+    <div className="flex flex-wrap gap-1">
+      {v.warna && <Badge variant="secondary">{v.warna}</Badge>}
+      {v.ukuran && <Badge variant="outline">{v.ukuran}</Badge>}
+    </div>
+  );
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">
-            Master barang (pcs). Saat tambah, pilih gudang + stok awal (opsional).
+            Master barang (pcs). Bisa tanpa varian, atau dengan warna/ukuran.
           </p>
           {initialCategories.length === 0 && (
             <p className="text-sm text-destructive">
@@ -375,7 +590,7 @@ export function ProductInventoryClient({
         </div>
         <Button
           onClick={openCreate}
-          className="gap-2"
+          className="gap-2 min-h-[44px]"
           disabled={initialCategories.length === 0 || activeWarehouses.length === 0}
         >
           <Plus className="w-4 h-4" />
@@ -389,14 +604,14 @@ export function ProductInventoryClient({
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari barang atau kategori..."
-            className="pl-9"
+            placeholder="Cari barang, kategori, warna, ukuran..."
+            className="pl-9 min-h-[44px] h-11"
           />
         </div>
         <select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
-          className="flex h-10 w-full sm:w-48 rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="flex min-h-[44px] h-11 w-full sm:w-48 rounded-lg border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="">Semua kategori</option>
           {initialCategories.map((c) => (
@@ -405,64 +620,189 @@ export function ProductInventoryClient({
             </option>
           ))}
         </select>
+        {isFiltered && (
+          <Button
+            type="button"
+            variant="ghost"
+            className="min-h-[44px] gap-1"
+            onClick={() => {
+              setSearchQuery("");
+              setCategoryFilter("");
+            }}
+          >
+            <X className="w-4 h-4" />
+            Reset
+          </Button>
+        )}
       </div>
 
-      {filtered.length === 0 ? (
+      {groups.length === 0 ? (
         <Card className="shadow-sm">
           <CardContent className="py-16 text-center">
             <Package className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground">Belum ada barang</p>
+            <p className="text-muted-foreground">
+              {isFiltered ? "Tidak ada hasil untuk filter ini" : "Belum ada barang"}
+            </p>
           </CardContent>
         </Card>
       ) : (
         <>
           <div className="md:hidden space-y-3">
-            {filtered.map((p) => {
-              const cat =
-                initialCategories.find((c) => c.id === p.category_id)?.name ||
-                p.category ||
-                "—";
-              const total = getTotalStock(initialStocks, p.id);
-              const low = total < p.min_stock;
+            {groups.map((g) => {
+              const cat = categoryName(g.parent) || "—";
+              if (!g.isGroup || g.variants.length === 0) {
+                const p = g.parent;
+                const total = getTotalStock(initialStocks, p.id);
+                const low = total < p.min_stock;
+                return (
+                  <Card key={g.key} className="shadow-sm">
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-start gap-3">
+                        <ProductThumb
+                          name={p.name}
+                          photoUrl={p.photo_url}
+                          onPreview={(url, n) => setPhotoLightbox({ url, name: n })}
+                        />
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold truncate">{p.name}</p>
+                            <Badge variant="secondary">{cat}</Badge>
+                          </div>
+                          <p className="font-bold text-primary">
+                            {formatCurrency(p.base_price)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Stok total: {total} pcs
+                            {low && (
+                              <Badge
+                                variant="outline"
+                                className="ml-2 text-destructive border-destructive/40"
+                              >
+                                Di bawah min ({p.min_stock})
+                              </Badge>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button size="sm" variant="outline" onClick={() => openEdit(p)}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setAddVariantParent(p);
+                            setAddVariantForm({
+                              warna: "",
+                              ukuran: "",
+                              base_price: String(p.base_price),
+                              min_stock: String(p.min_stock),
+                            });
+                          }}
+                        >
+                          + Varian
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-destructive"
+                          onClick={() => setDeleteTarget(p)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+
               return (
-                <Card key={p.id} className="shadow-sm">
-                  <CardContent className="p-4 space-y-2">
+                <Card key={g.key} className="shadow-sm">
+                  <CardContent className="p-4 space-y-3">
                     <div className="flex items-start gap-3">
                       <ProductThumb
-                        name={p.name}
-                        photoUrl={p.photo_url}
+                        name={g.parent.name}
+                        photoUrl={g.parent.photo_url}
                         onPreview={(url, n) => setPhotoLightbox({ url, name: n })}
                       />
-                      <div className="min-w-0 flex-1 space-y-1">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="font-semibold truncate">{p.name}</p>
+                          <p className="font-semibold truncate">{g.parent.name}</p>
                           <Badge variant="secondary">{cat}</Badge>
                         </div>
-                        <p className="font-bold text-primary">{formatCurrency(p.base_price)}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Stok total: {total} pcs
-                          {low && (
-                            <Badge
-                              variant="outline"
-                              className="ml-2 text-destructive border-destructive/40"
-                            >
-                              Di bawah min ({p.min_stock})
-                            </Badge>
-                          )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {g.variants.length} varian
                         </p>
                       </div>
                     </div>
-                    <div className="flex gap-2 pt-1">
-                      <Button size="sm" variant="outline" onClick={() => openEdit(p)}>
-                        <Pencil className="w-3.5 h-3.5" />
+                    <div className="space-y-2">
+                      {g.variants.map((v) => {
+                        const total = getTotalStock(initialStocks, v.id);
+                        return (
+                          <div
+                            key={v.id}
+                            className="rounded-lg border border-border bg-accent/20 p-3 space-y-2"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="space-y-1">
+                                {renderVariantBadges(v)}
+                                <p className="font-semibold text-primary">
+                                  {formatCurrency(v.base_price)}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  Stok: {total} pcs
+                                </p>
+                              </div>
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8"
+                                  onClick={() => openVariantEdit(v)}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 text-destructive"
+                                  onClick={() => setDeleteTarget(v)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openEdit(g.parent)}>
+                        Edit Produk
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setAddVariantParent(g.parent);
+                          setAddVariantForm({
+                            warna: "",
+                            ukuran: "",
+                            base_price: String(g.parent.base_price),
+                            min_stock: String(g.parent.min_stock),
+                          });
+                        }}
+                      >
+                        + Varian
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
                         className="text-destructive"
-                        onClick={() => setDeleteTarget(p)}
+                        onClick={() => setDeleteTarget(g.parent)}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        Hapus Semua
                       </Button>
                     </div>
                   </CardContent>
@@ -480,62 +820,184 @@ export function ProductInventoryClient({
                   <TableHead>Harga</TableHead>
                   <TableHead>Min</TableHead>
                   <TableHead>Stok</TableHead>
-                  <TableHead className="w-[100px]">Aksi</TableHead>
+                  <TableHead className="w-[140px]">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((p) => {
-                  const cat =
-                    initialCategories.find((c) => c.id === p.category_id)?.name ||
-                    p.category ||
-                    "—";
-                  const total = getTotalStock(initialStocks, p.id);
-                  const low = total < p.min_stock;
+                {groups.map((g) => {
+                  const cat = categoryName(g.parent) || "—";
+                  if (!g.isGroup || g.variants.length === 0) {
+                    const p = g.parent;
+                    const total = getTotalStock(initialStocks, p.id);
+                    const low = total < p.min_stock;
+                    return (
+                      <TableRow key={g.key}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <ProductThumb
+                              name={p.name}
+                              photoUrl={p.photo_url}
+                              onPreview={(url, n) => setPhotoLightbox({ url, name: n })}
+                            />
+                            <span className="font-semibold">{p.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{cat}</Badge>
+                        </TableCell>
+                        <TableCell className="font-semibold">
+                          {formatCurrency(p.base_price)}
+                        </TableCell>
+                        <TableCell>{p.min_stock}</TableCell>
+                        <TableCell>
+                          <span className={low ? "text-destructive font-semibold" : ""}>
+                            {total} pcs
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openEdit(p)}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2 text-xs"
+                              onClick={() => {
+                                setAddVariantParent(p);
+                                setAddVariantForm({
+                                  warna: "",
+                                  ukuran: "",
+                                  base_price: String(p.base_price),
+                                  min_stock: String(p.min_stock),
+                                });
+                              }}
+                            >
+                              + Varian
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => setDeleteTarget(p)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+
                   return (
-                    <TableRow key={p.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <ProductThumb
-                            name={p.name}
-                            photoUrl={p.photo_url}
-                            onPreview={(url, n) => setPhotoLightbox({ url, name: n })}
-                          />
-                          <span className="font-semibold">{p.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{cat}</Badge>
-                      </TableCell>
-                      <TableCell className="font-semibold">
-                        {formatCurrency(p.base_price)}
-                      </TableCell>
-                      <TableCell>{p.min_stock}</TableCell>
-                      <TableCell>
-                        <span className={low ? "text-destructive font-semibold" : ""}>
-                          {total} pcs
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => openEdit(p)}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive"
-                            onClick={() => setDeleteTarget(p)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                    <Fragment key={g.key}>
+                      <TableRow className="bg-muted/30">
+                        <TableCell colSpan={5}>
+                          <div className="flex items-center gap-3">
+                            <ProductThumb
+                              name={g.parent.name}
+                              photoUrl={g.parent.photo_url}
+                              onPreview={(url, n) => setPhotoLightbox({ url, name: n })}
+                            />
+                            <div>
+                              <p className="font-semibold">{g.parent.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {g.variants.length} varian · {cat}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8"
+                              onClick={() => openEdit(g.parent)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8"
+                              onClick={() => {
+                                setAddVariantParent(g.parent);
+                                setAddVariantForm({
+                                  warna: "",
+                                  ukuran: "",
+                                  base_price: String(g.parent.base_price),
+                                  min_stock: String(g.parent.min_stock),
+                                });
+                              }}
+                            >
+                              + Varian
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive"
+                              onClick={() => setDeleteTarget(g.parent)}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                      {g.variants.map((v) => {
+                        const total = getTotalStock(initialStocks, v.id);
+                        const low = total < v.min_stock;
+                        return (
+                          <TableRow key={v.id}>
+                            <TableCell>
+                              <div className="pl-12 space-y-1">
+                                {renderVariantBadges(v)}
+                                <p className="text-xs text-muted-foreground">
+                                  {productDisplayName(v)}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{cat}</Badge>
+                            </TableCell>
+                            <TableCell className="font-semibold">
+                              {formatCurrency(v.base_price)}
+                            </TableCell>
+                            <TableCell>{v.min_stock}</TableCell>
+                            <TableCell>
+                              <span className={low ? "text-destructive font-semibold" : ""}>
+                                {total} pcs
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => openVariantEdit(v)}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive"
+                                  onClick={() => setDeleteTarget(v)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </Fragment>
                   );
                 })}
               </TableBody>
@@ -545,7 +1007,7 @@ export function ProductInventoryClient({
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
           <DialogHeader className="shrink-0 px-4 pt-4 pr-12">
             <DialogTitle>{editing ? "Edit Barang" : "Tambah Barang"}</DialogTitle>
           </DialogHeader>
@@ -579,9 +1041,6 @@ export function ProductInventoryClient({
                 accept="image/jpeg,image/png,image/webp"
                 onChange={(e) => pickPhoto(e.target.files?.[0] || null)}
               />
-              <p className="text-xs text-muted-foreground">
-                JPEG, PNG, atau WebP · dikompres otomatis, upload di belakang setelah Simpan
-              </p>
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium">Nama</label>
@@ -589,6 +1048,7 @@ export function ProductInventoryClient({
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="Nama barang"
+                className="min-h-[44px] h-11"
               />
             </div>
             <div className="space-y-1">
@@ -596,7 +1056,7 @@ export function ProductInventoryClient({
               <select
                 value={form.category_id}
                 onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="flex min-h-[44px] h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="" disabled>
                   Pilih kategori
@@ -609,7 +1069,9 @@ export function ProductInventoryClient({
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium">Harga referensi</label>
+              <label className="text-sm font-medium">
+                {form.has_variants ? "Harga referensi" : "Harga jual"}
+              </label>
               <CurrencyInput
                 value={form.base_price}
                 onChange={(v) => setForm((f) => ({ ...f, base_price: v }))}
@@ -622,16 +1084,137 @@ export function ProductInventoryClient({
                 min={0}
                 value={form.min_stock}
                 onChange={(e) => setForm((f) => ({ ...f, min_stock: e.target.value }))}
+                className="min-h-[44px] h-11"
               />
             </div>
+
             {!editing && (
+              <div className="rounded-lg border border-border p-3 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">Produk memiliki varian</p>
+                    <p className="text-xs text-muted-foreground">
+                      Warna, ukuran, atau keduanya. Matikan jika satu barang saja.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={form.has_variants ? "default" : "outline"}
+                    className="min-h-[44px] shrink-0"
+                    onClick={() =>
+                      setForm((f) => {
+                        const next = !f.has_variants;
+                        if (next && variantDrafts.length === 0) {
+                          setVariantDrafts([newVariantDraft(f.base_price)]);
+                        }
+                        return { ...f, has_variants: next };
+                      })
+                    }
+                    aria-pressed={form.has_variants}
+                  >
+                    {form.has_variants ? "Aktif" : "Nonaktif"}
+                  </Button>
+                </div>
+
+                {form.has_variants && (
+                  <div className="space-y-3">
+                    {variantDrafts.map((v, idx) => (
+                      <div
+                        key={v.key}
+                        className="rounded-lg bg-accent/30 border border-border p-3 space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase text-muted-foreground">
+                            Varian {idx + 1}
+                          </p>
+                          {variantDrafts.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-destructive"
+                              onClick={() =>
+                                setVariantDrafts((list) => list.filter((x) => x.key !== v.key))
+                              }
+                            >
+                              Hapus
+                            </Button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">Warna</label>
+                            <Input
+                              value={v.warna}
+                              onChange={(e) =>
+                                setVariantDrafts((list) =>
+                                  list.map((x) =>
+                                    x.key === v.key ? { ...x, warna: e.target.value } : x
+                                  )
+                                )
+                              }
+                              placeholder="opsional"
+                              className="min-h-[44px] h-11"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">Ukuran</label>
+                            <Input
+                              value={v.ukuran}
+                              onChange={(e) =>
+                                setVariantDrafts((list) =>
+                                  list.map((x) =>
+                                    x.key === v.key ? { ...x, ukuran: e.target.value } : x
+                                  )
+                                )
+                              }
+                              placeholder="opsional"
+                              className="min-h-[44px] h-11"
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium">Harga jual</label>
+                          <CurrencyInput
+                            value={v.base_price}
+                            onChange={(val) =>
+                              setVariantDrafts((list) =>
+                                list.map((x) =>
+                                  x.key === v.key ? { ...x, base_price: val } : x
+                                )
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full min-h-[44px] gap-1"
+                      onClick={() =>
+                        setVariantDrafts((list) => [...list, newVariantDraft(form.base_price)])
+                      }
+                    >
+                      <Plus className="w-4 h-4" />
+                      Tambah Varian
+                    </Button>
+                    <p className="text-xs text-muted-foreground">
+                      Akan dibuat {variantDrafts.length} varian. Stok diisi lewat Mutasi IN.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!editing && !form.has_variants && (
               <>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Gudang stok awal</label>
                   <select
                     value={form.warehouse_id}
                     onChange={(e) => setForm((f) => ({ ...f, warehouse_id: e.target.value }))}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    className="flex min-h-[44px] h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
                   >
                     {activeWarehouses.map((w) => (
                       <option key={w.id} value={w.id}>
@@ -640,9 +1223,6 @@ export function ProductInventoryClient({
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-muted-foreground">
-                    Default: Gudang Utama. Bisa diisi 0 lalu Mutasi IN nanti.
-                  </p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Qty stok awal</label>
@@ -652,15 +1232,25 @@ export function ProductInventoryClient({
                     value={form.initial_qty}
                     onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
                     placeholder="0"
+                    className="min-h-[44px] h-11"
                   />
                 </div>
               </>
             )}
+
+            {editing && form.has_variants && (
+              <p className="text-xs text-muted-foreground rounded-lg border border-border p-3">
+                Produk ini punya varian. Edit nama/kategori di sini; kelola warna/ukuran lewat
+                tombol Edit pada tiap varian.
+              </p>
+            )}
+
             <div className="space-y-1">
               <label className="text-sm font-medium">Deskripsi (opsional)</label>
               <Input
                 value={form.description}
                 onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                className="min-h-[44px] h-11"
               />
             </div>
             <p className="text-xs text-muted-foreground">Satuan: pcs</p>
@@ -671,6 +1261,129 @@ export function ProductInventoryClient({
             </Button>
             <Button type="button" onClick={handleSubmit} disabled={busy}>
               {editing ? "Simpan" : "Tambah"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!variantEdit}
+        onOpenChange={(open) => {
+          if (!open) setVariantEdit(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Varian</DialogTitle>
+          </DialogHeader>
+          {variantEdit && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Warna</label>
+                  <Input
+                    value={variantEdit.warna}
+                    onChange={(e) =>
+                      setVariantEdit((v) => (v ? { ...v, warna: e.target.value } : v))
+                    }
+                    className="min-h-[44px] h-11"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium">Ukuran</label>
+                  <Input
+                    value={variantEdit.ukuran}
+                    onChange={(e) =>
+                      setVariantEdit((v) => (v ? { ...v, ukuran: e.target.value } : v))
+                    }
+                    className="min-h-[44px] h-11"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Harga jual</label>
+                <CurrencyInput
+                  value={variantEdit.base_price}
+                  onChange={(val) =>
+                    setVariantEdit((v) => (v ? { ...v, base_price: val } : v))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Stok minimum</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={variantEdit.min_stock}
+                  onChange={(e) =>
+                    setVariantEdit((v) => (v ? { ...v, min_stock: e.target.value } : v))
+                  }
+                  className="min-h-[44px] h-11"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setVariantEdit(null)}>
+              Batal
+            </Button>
+            <Button type="button" onClick={handleSaveVariantEdit} disabled={busy}>
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!addVariantParent}
+        onOpenChange={(open) => {
+          if (!open) setAddVariantParent(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tambah Varian</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Produk: <strong>{addVariantParent?.name}</strong>
+          </p>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Warna</label>
+                <Input
+                  value={addVariantForm.warna}
+                  onChange={(e) =>
+                    setAddVariantForm((f) => ({ ...f, warna: e.target.value }))
+                  }
+                  className="min-h-[44px] h-11"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Ukuran</label>
+                <Input
+                  value={addVariantForm.ukuran}
+                  onChange={(e) =>
+                    setAddVariantForm((f) => ({ ...f, ukuran: e.target.value }))
+                  }
+                  className="min-h-[44px] h-11"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Harga jual</label>
+              <CurrencyInput
+                value={addVariantForm.base_price}
+                onChange={(val) => setAddVariantForm((f) => ({ ...f, base_price: val }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setAddVariantParent(null)}>
+              Batal
+            </Button>
+            <Button type="button" onClick={handleAddVariant} disabled={busy}>
+              Tambah
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -707,8 +1420,14 @@ export function ProductInventoryClient({
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus barang permanen?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget?.name} dan fotonya akan dihapus (hard delete). Riwayat transaksi tetap
-              menyimpan nama/harga. Ditolak jika masih ada stok.
+              {deleteTarget
+                ? `${productDisplayName(deleteTarget)}${
+                    !deleteTarget.parent_id &&
+                    isParentShellProduct(deleteTarget, initialProducts)
+                      ? " beserta semua variannya"
+                      : ""
+                  } akan dihapus. Ditolak jika masih ada stok.`
+                : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
