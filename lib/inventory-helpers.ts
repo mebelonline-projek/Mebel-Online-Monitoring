@@ -37,6 +37,41 @@ export function isParentShellProduct(
   return all.some((c) => c.parent_id === p.id);
 }
 
+/**
+ * Peringkat kecocokan pencarian barang: nama produk didahulukan, lalu varian,
+ * baru kategori. Return -1 jika tidak cocok. Angka kecil = lebih relevan.
+ */
+export const NO_SEARCH_MATCH = -1;
+
+export function productSearchScore(
+  target: {
+    name: string;
+    parentName?: string;
+    warna?: string | null;
+    ukuran?: string | null;
+    category?: string;
+  },
+  query: string
+): number {
+  const q = query.trim().toLowerCase();
+  if (!q) return 0;
+
+  const name = target.name.toLowerCase();
+  const parentName = (target.parentName || "").toLowerCase();
+  if (name.startsWith(q) || parentName.startsWith(q)) return 0;
+  if (name.includes(q) || parentName.includes(q)) return 1;
+
+  const variant = [target.warna, target.ukuran]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  if (variant.includes(q)) return 2;
+
+  if ((target.category || "").toLowerCase().includes(q)) return 3;
+
+  return NO_SEARCH_MATCH;
+}
+
 export function isSellableProduct(
   p: { id: string; parent_id?: string | null },
   all: { id: string; parent_id?: string | null }[]

@@ -7,7 +7,12 @@ import {
   type CategoryRow,
   type StockRow,
 } from "@/lib/inventory";
-import { getStockQty, getTotalStock } from "@/lib/inventory-helpers";
+import {
+  getStockQty,
+  getTotalStock,
+  productSearchScore,
+  NO_SEARCH_MATCH,
+} from "@/lib/inventory-helpers";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -122,63 +127,59 @@ export function StockMatrixClient({
     [products]
   );
 
-  const filteredProducts = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+  const search = useMemo(() => {
+    const q = searchQuery.trim();
     const parentNameById = new Map(
       products.filter((p) => !p.parent_id).map((p) => [p.id, p.name])
     );
 
-    const matched = sellableProducts.filter((p) => {
-      const cat = categoryName(p);
+    const passesFilters = (p: InventoryProductRow) => {
       if (categoryFilter && p.category_id !== categoryFilter) return false;
+      if (lowStockOnly && !(getTotalStock(stocks, p.id) < p.min_stock)) return false;
+      return true;
+    };
 
-      const total = getTotalStock(stocks, p.id);
-      if (lowStockOnly && !(total < p.min_stock)) return false;
-
-      if (!q) return true;
-      const parentName = p.parent_id ? parentNameById.get(p.parent_id) || "" : "";
-      const hay = [
-        p.name,
-        parentName,
-        cat,
-        p.warna || "",
-        p.ukuran || "",
-        displayName(p),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
+    const scoreById = new Map<string, number>();
+    const matched = sellableProducts.filter((p) => {
+      if (!passesFilters(p)) return false;
+      const score = productSearchScore(
+        {
+          name: p.name,
+          parentName: p.parent_id ? parentNameById.get(p.parent_id) || "" : "",
+          warna: p.warna,
+          ukuran: p.ukuran,
+          category: categoryName(p),
+        },
+        q
+      );
+      if (score === NO_SEARCH_MATCH) return false;
+      scoreById.set(p.id, score);
+      return true;
     });
 
-    if (!q) return matched;
+    if (!q) return { rows: matched, scoreById };
 
-    // Nama produk utama cocok → tampilkan semua variannya
-    const matchedIds = new Set(matched.map((p) => p.id));
+    // Nama produk utama cocok → variannya ikut tampil
     const parentIds = new Set(
       matched.filter((p) => p.parent_id).map((p) => p.parent_id as string)
     );
-    for (const p of matched) {
-      if (!p.parent_id && p.name.toLowerCase().includes(q)) {
-        // standalone name match — already in set
-      }
-    }
-    // Also: if any sellable shares a parent whose name matches q, include siblings
-    for (const p of sellableProducts) {
-      if (!p.parent_id) continue;
-      const parentName = parentNameById.get(p.parent_id) || "";
-      if (parentName.toLowerCase().includes(q) || matchedIds.has(p.id)) {
-        if (categoryFilter && p.category_id !== categoryFilter) continue;
-        if (lowStockOnly) {
-          const total = getTotalStock(stocks, p.id);
-          if (!(total < p.min_stock)) continue;
-        }
-        matchedIds.add(p.id);
-        parentIds.add(p.parent_id);
-      }
-    }
+    const rows = sellableProducts.filter((p) => {
+      if (scoreById.has(p.id)) return true;
+      if (!p.parent_id || !parentIds.has(p.parent_id)) return false;
+      if (!passesFilters(p)) return false;
+      const inherited = Math.min(
+        ...matched
+          .filter((m) => m.parent_id === p.parent_id)
+          .map((m) => scoreById.get(m.id) ?? NO_SEARCH_MATCH)
+      );
+      scoreById.set(p.id, Number.isFinite(inherited) ? inherited : 3);
+      return true;
+    });
 
-    return sellableProducts.filter((p) => matchedIds.has(p.id));
+    return { rows, scoreById };
   }, [sellableProducts, products, categories, searchQuery, categoryFilter, lowStockOnly, stocks]);
+
+  const filteredProducts = search.rows;
 
   const groups = useMemo(() => {
     // Include parent shells only for grouping labels when any child remains
@@ -190,12 +191,24 @@ export function StockMatrixClient({
         if (!withParents.some((x) => x.id === parent.id)) withParents.push(parent);
       }
     }
-    const built = buildGroups(withParents);
-    return built.map((g) => ({
+    const built = buildGroups(withParents).map((g) => ({
       ...g,
       categoryLabel: categoryName(g.rows[0]),
     }));
-  }, [filteredProducts, products, categories]);
+
+    const groupScore = (g: StockGroup) => {
+      const scores = g.rows
+        .map((p) => search.scoreById.get(p.id))
+        .filter((s): s is number => s !== undefined);
+      return scores.length ? Math.min(...scores) : 3;
+    };
+
+    return built.sort((a, b) => {
+      const diff = groupScore(a) - groupScore(b);
+      if (diff !== 0) return diff;
+      return a.title.localeCompare(b.title, "id");
+    });
+  }, [filteredProducts, products, categories, search]);
 
   const isFiltered =
     Boolean(searchQuery.trim()) || Boolean(categoryFilter) || lowStockOnly;
@@ -295,65 +308,140 @@ export function StockMatrixClient({
       ) : (
         <>
           <div className="md:hidden space-y-3">
-            {groups.map((group) => (
-              <div key={group.key} className="space-y-2">
-                {group.isGroup && (
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
-                    {group.title}
-                    {group.categoryLabel ? ` · ${group.categoryLabel}` : ""}
-                  </p>
-                )}
-                {group.rows.map((p) => {
-                  const total = getTotalStock(stocks, p.id);
-                  const low = total < p.min_stock;
-                  const cat = categoryName(p) || "—";
-                  const v = variantLabel(p);
-                  return (
-                    <Card key={p.id} className="shadow-sm">
-                      <CardContent className="p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-semibold">
-                              {group.isGroup && v ? v : displayName(p)}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {group.isGroup ? group.title : cat}
-                            </p>
-                          </div>
-                          {low && (
-                            <Badge
-                              variant="outline"
-                              className="text-destructive border-destructive/40 shrink-0"
-                            >
-                              Min {p.min_stock}
-                            </Badge>
-                          )}
+            {groups.map((group) => {
+              if (!group.isGroup) {
+                const p = group.rows[0];
+                if (!p) return null;
+                const total = getTotalStock(stocks, p.id);
+                const low = total < p.min_stock;
+                const cat = categoryName(p) || "—";
+                return (
+                  <Card key={group.key} className="shadow-sm">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-semibold">{displayName(p)}</p>
+                          <p className="text-xs text-muted-foreground">{cat}</p>
                         </div>
-                        <div className="space-y-1">
-                          {activeWarehouses.map((w) => (
-                            <div key={w.id} className="flex justify-between text-sm">
-                              <span className="text-muted-foreground">
-                                {w.name}
-                                {w.is_sales_warehouse ? " ★" : ""}
-                              </span>
-                              <span className="font-medium">
-                                {getStockQty(stocks, p.id, w.id)} pcs
-                              </span>
-                            </div>
-                          ))}
-                          <div className="flex justify-between text-sm border-t pt-1 font-semibold">
-                            <span>Total</span>
-                            <span className={low ? "text-destructive" : ""}>
-                              {total} pcs
+                        {low && (
+                          <Badge
+                            variant="outline"
+                            className="text-destructive border-destructive/40 shrink-0"
+                          >
+                            Min {p.min_stock}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        {activeWarehouses.map((w) => (
+                          <div key={w.id} className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">
+                              {w.name}
+                              {w.is_sales_warehouse ? " ★" : ""}
+                            </span>
+                            <span className="font-medium">
+                              {getStockQty(stocks, p.id, w.id)} pcs
                             </span>
                           </div>
+                        ))}
+                        <div className="flex justify-between text-sm border-t pt-1 font-semibold">
+                          <span>Total</span>
+                          <span className={low ? "text-destructive" : ""}>{total} pcs</span>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }
+
+              const groupTotal = group.rows.reduce(
+                (sum, p) => sum + getTotalStock(stocks, p.id),
+                0
+              );
+              const anyLow = group.rows.some(
+                (p) => getTotalStock(stocks, p.id) < p.min_stock
+              );
+
+              return (
+                <Card key={group.key} className="shadow-sm">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-semibold">{group.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {group.categoryLabel || "—"} · {group.rows.length} varian
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-sm font-semibold ${anyLow ? "text-destructive" : ""}`}>
+                          {groupTotal} pcs
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">Total</p>
+                      </div>
+                    </div>
+
+                    <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
+                      {group.rows.map((p) => {
+                        const total = getTotalStock(stocks, p.id);
+                        const low = total < p.min_stock;
+                        const v = variantLabel(p);
+                        return (
+                          <div key={p.id} className="bg-background p-3 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                {v ? (
+                                  v.split(" / ").map((part, i) => (
+                                    <Badge
+                                      key={`${p.id}-${part}-${i}`}
+                                      variant={i === 0 ? "secondary" : "outline"}
+                                    >
+                                      {part}
+                                    </Badge>
+                                  ))
+                                ) : (
+                                  <span className="text-sm font-medium">{p.name}</span>
+                                )}
+                                {low && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-destructive border-destructive/40"
+                                  >
+                                    Min {p.min_stock}
+                                  </Badge>
+                                )}
+                              </div>
+                              <span
+                                className={`text-sm font-semibold tabular-nums shrink-0 ${
+                                  low ? "text-destructive" : ""
+                                }`}
+                              >
+                                {total} pcs
+                              </span>
+                            </div>
+                            <div className="space-y-0.5">
+                              {activeWarehouses.map((w) => (
+                                <div
+                                  key={w.id}
+                                  className="flex justify-between text-xs text-muted-foreground"
+                                >
+                                  <span>
+                                    {w.name}
+                                    {w.is_sales_warehouse ? " ★" : ""}
+                                  </span>
+                                  <span className="tabular-nums">
+                                    {getStockQty(stocks, p.id, w.id)} pcs
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
 
           <Card className="shadow-sm overflow-x-auto hidden md:block">

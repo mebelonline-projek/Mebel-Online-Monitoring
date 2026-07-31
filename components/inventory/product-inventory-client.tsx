@@ -9,15 +9,19 @@ import {
   uploadProductPhoto,
   addInventoryVariant,
   updateInventoryVariant,
+  createStockMovement,
   type InventoryProductRow,
   type CategoryRow,
   type StockRow,
   type WarehouseRow,
 } from "@/lib/inventory";
 import {
+  getStockQty,
   getTotalStock,
   isParentShellProduct,
   productDisplayName,
+  productSearchScore,
+  NO_SEARCH_MATCH,
 } from "@/lib/inventory-helpers";
 import { formatCurrency } from "@/lib/formatters";
 import { toast } from "sonner";
@@ -109,6 +113,14 @@ type VariantEditState = {
   ukuran: string;
   base_price: string;
   min_stock: string;
+};
+
+type StockAdjustState = {
+  productId: string;
+  warehouse_id: string;
+  direction: "IN" | "OUT";
+  qty: string;
+  note: string;
 };
 
 type ListGroup = {
@@ -207,6 +219,7 @@ export function ProductInventoryClient({
     warehouse_id: defaultWarehouseId,
     initial_qty: "0",
   });
+  const [stockAdjust, setStockAdjust] = useState<StockAdjustState | null>(null);
   const photoCompressRef = useRef<Promise<File> | null>(null);
 
   const pickPhoto = (file: File | null) => {
@@ -238,49 +251,60 @@ export function ProductInventoryClient({
   const categoryName = (p: InventoryProductRow) =>
     initialCategories.find((c) => c.id === p.category_id)?.name || p.category || "";
 
-  const filtered = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+  const search = useMemo(() => {
+    const q = searchQuery.trim();
     const parentNameById = new Map(
       initialProducts.filter((p) => !p.parent_id).map((p) => [p.id, p.name])
     );
 
+    const scoreById = new Map<string, number>();
     const matched = initialProducts.filter((p) => {
-      const cat = categoryName(p);
       if (categoryFilter && p.category_id !== categoryFilter) return false;
-      if (!q) return true;
-      const parentName = p.parent_id ? parentNameById.get(p.parent_id) || "" : "";
-      const hay = [
-        p.name,
-        parentName,
-        cat,
-        p.warna || "",
-        p.ukuran || "",
-        productDisplayName(p),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
+      const score = productSearchScore(
+        {
+          name: p.name,
+          parentName: p.parent_id ? parentNameById.get(p.parent_id) || "" : "",
+          warna: p.warna,
+          ukuran: p.ukuran,
+          category: categoryName(p),
+        },
+        q
+      );
+      if (score === NO_SEARCH_MATCH) return false;
+      scoreById.set(p.id, score);
+      return true;
     });
 
-    if (!q && !categoryFilter) return matched;
+    if (!q && !categoryFilter) return { rows: matched, scoreById };
 
-    // Jika nama produk utama cocok, sertakan semua variannya (dan sebaliknya)
-    const matchedIds = new Set(matched.map((p) => p.id));
+    // Nama produk utama cocok → variannya ikut tampil (dan sebaliknya)
     const parentIdsToInclude = new Set<string>();
     for (const p of matched) {
       if (p.parent_id) parentIdsToInclude.add(p.parent_id);
       else if (isParentShellProduct(p, initialProducts)) parentIdsToInclude.add(p.id);
     }
-    for (const p of initialProducts) {
-      if (p.parent_id && parentIdsToInclude.has(p.parent_id)) matchedIds.add(p.id);
-      if (!p.parent_id && parentIdsToInclude.has(p.id)) matchedIds.add(p.id);
-    }
 
-    return initialProducts.filter((p) => {
+    const rows = initialProducts.filter((p) => {
       if (categoryFilter && p.category_id !== categoryFilter) return false;
-      return matchedIds.has(p.id);
+      if (scoreById.has(p.id)) return true;
+      const inGroup = p.parent_id
+        ? parentIdsToInclude.has(p.parent_id)
+        : parentIdsToInclude.has(p.id);
+      if (!inGroup) return false;
+      const groupId = p.parent_id || p.id;
+      const inherited = Math.min(
+        ...matched
+          .filter((m) => (m.parent_id || m.id) === groupId)
+          .map((m) => scoreById.get(m.id) ?? NO_SEARCH_MATCH)
+      );
+      scoreById.set(p.id, Number.isFinite(inherited) ? inherited : 3);
+      return true;
     });
+
+    return { rows, scoreById };
   }, [initialProducts, initialCategories, searchQuery, categoryFilter]);
+
+  const filtered = search.rows;
 
   const groups = useMemo(() => {
     const childrenByParent = new Map<string, InventoryProductRow[]>();
@@ -327,8 +351,19 @@ export function ProductInventoryClient({
       });
     }
 
-    return result;
-  }, [filtered, initialProducts]);
+    const groupScore = (g: ListGroup) => {
+      const scores = [g.parent, ...g.variants]
+        .map((p) => search.scoreById.get(p.id))
+        .filter((s): s is number => s !== undefined);
+      return scores.length ? Math.min(...scores) : 3;
+    };
+
+    return result.sort((a, b) => {
+      const diff = groupScore(a) - groupScore(b);
+      if (diff !== 0) return diff;
+      return a.parent.name.localeCompare(b.parent.name, "id");
+    });
+  }, [filtered, initialProducts, search]);
 
   const isFiltered = Boolean(searchQuery.trim()) || Boolean(categoryFilter);
 
@@ -354,7 +389,18 @@ export function ProductInventoryClient({
       has_variants: false,
     });
     setVariantDrafts([]);
+    setStockAdjust(null);
     setDialogOpen(true);
+  };
+
+  const resetStockAdjust = (productId: string) => {
+    setStockAdjust({
+      productId,
+      warehouse_id: defaultWarehouseId,
+      direction: "IN",
+      qty: "",
+      note: "",
+    });
   };
 
   const openEdit = (p: InventoryProductRow) => {
@@ -380,6 +426,11 @@ export function ProductInventoryClient({
       has_variants: isParentShellProduct(target, initialProducts),
     });
     setVariantDrafts([]);
+    if (!isParentShellProduct(target, initialProducts)) {
+      resetStockAdjust(target.id);
+    } else {
+      setStockAdjust(null);
+    }
     setDialogOpen(true);
   };
 
@@ -392,6 +443,7 @@ export function ProductInventoryClient({
       base_price: String(v.base_price),
       min_stock: String(v.min_stock),
     });
+    resetStockAdjust(v.id);
   };
 
   const uploadPhotoInBackground = (
@@ -562,6 +614,59 @@ export function ProductInventoryClient({
     }
     toast.success(result.message);
     setVariantEdit(null);
+    setStockAdjust(null);
+    router.refresh();
+  };
+
+  const handleAdjustStock = async () => {
+    if (!stockAdjust) return;
+    const qty = Math.floor(Number(stockAdjust.qty));
+    if (!stockAdjust.warehouse_id) {
+      toast.error("Pilih gudang");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty < 1) {
+      toast.error("Qty minimal 1");
+      return;
+    }
+    if (stockAdjust.direction === "OUT") {
+      const available = getStockQty(
+        initialStocks,
+        stockAdjust.productId,
+        stockAdjust.warehouse_id
+      );
+      if (qty > available) {
+        toast.error(`Stok di gudang hanya ${available} pcs`);
+        return;
+      }
+    }
+
+    setBusy(true);
+    const result = await createStockMovement({
+      type: stockAdjust.direction,
+      product_id: stockAdjust.productId,
+      qty,
+      from_warehouse_id:
+        stockAdjust.direction === "OUT" ? stockAdjust.warehouse_id : null,
+      to_warehouse_id:
+        stockAdjust.direction === "IN" ? stockAdjust.warehouse_id : null,
+      note:
+        stockAdjust.note.trim() ||
+        (stockAdjust.direction === "IN"
+          ? "Penyesuaian stok dari edit barang"
+          : "Pengurangan stok dari edit barang"),
+    });
+    setBusy(false);
+    if (!result.success) {
+      toast.error(result.message);
+      return;
+    }
+    toast.success(
+      stockAdjust.direction === "IN"
+        ? `Stok ditambah +${qty} pcs`
+        : `Stok dikurangi −${qty} pcs`
+    );
+    setStockAdjust((s) => (s ? { ...s, qty: "", note: "" } : s));
     router.refresh();
   };
 
@@ -620,6 +725,112 @@ export function ProductInventoryClient({
       {v.ukuran && <Badge variant="outline">{v.ukuran}</Badge>}
     </div>
   );
+
+  const renderStockAdjust = (productId: string) => {
+    if (!stockAdjust || stockAdjust.productId !== productId) return null;
+    const warehouseStock = getStockQty(
+      initialStocks,
+      productId,
+      stockAdjust.warehouse_id
+    );
+    return (
+      <div className="rounded-lg border border-border p-3 space-y-3">
+        <div>
+          <p className="text-sm font-medium">Sesuaikan stok</p>
+          <p className="text-xs text-muted-foreground">
+            Tambah atau kurangi stok di gudang. Tidak mengubah data barang.
+          </p>
+        </div>
+        <div className="space-y-1">
+          {activeWarehouses.map((w) => (
+            <div key={w.id} className="flex justify-between text-xs text-muted-foreground">
+              <span>
+                {w.name}
+                {w.is_sales_warehouse ? " ★" : ""}
+              </span>
+              <span className="tabular-nums font-medium text-foreground">
+                {getStockQty(initialStocks, productId, w.id)} pcs
+              </span>
+            </div>
+          ))}
+          <div className="flex justify-between text-xs border-t pt-1 font-semibold text-foreground">
+            <span>Total</span>
+            <span className="tabular-nums">{getTotalStock(initialStocks, productId)} pcs</span>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Gudang</label>
+          <select
+            value={stockAdjust.warehouse_id}
+            onChange={(e) =>
+              setStockAdjust((s) => (s ? { ...s, warehouse_id: e.target.value } : s))
+            }
+            className="flex min-h-[44px] h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+          >
+            {activeWarehouses.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+                {w.is_sales_warehouse ? " (penjualan)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant={stockAdjust.direction === "IN" ? "default" : "outline"}
+            className="min-h-[44px]"
+            onClick={() => setStockAdjust((s) => (s ? { ...s, direction: "IN" } : s))}
+          >
+            Tambah
+          </Button>
+          <Button
+            type="button"
+            variant={stockAdjust.direction === "OUT" ? "default" : "outline"}
+            className="min-h-[44px]"
+            onClick={() => setStockAdjust((s) => (s ? { ...s, direction: "OUT" } : s))}
+          >
+            Kurang
+          </Button>
+        </div>
+        <div className="space-y-1">
+          <label className="text-sm font-medium">
+            Qty {stockAdjust.direction === "OUT" ? `(tersedia ${warehouseStock})` : ""}
+          </label>
+          <Input
+            type="number"
+            min={1}
+            value={stockAdjust.qty}
+            onChange={(e) =>
+              setStockAdjust((s) => (s ? { ...s, qty: e.target.value } : s))
+            }
+            placeholder="1"
+            className="min-h-[44px] h-11"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-sm font-medium">Catatan (opsional)</label>
+          <Input
+            value={stockAdjust.note}
+            onChange={(e) =>
+              setStockAdjust((s) => (s ? { ...s, note: e.target.value } : s))
+            }
+            placeholder="Mis. barang datang / rusak"
+            className="min-h-[44px] h-11"
+          />
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-full min-h-[44px]"
+          onClick={handleAdjustStock}
+          disabled={busy || activeWarehouses.length === 0}
+        >
+          Terapkan stok
+        </Button>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -1037,7 +1248,13 @@ export function ProductInventoryClient({
         </>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) setStockAdjust(null);
+        }}
+      >
         <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
           <DialogHeader className="shrink-0 px-4 pt-4 pr-12">
             <DialogTitle>{editing ? "Edit Barang" : "Tambah Barang"}</DialogTitle>
@@ -1296,8 +1513,8 @@ export function ProductInventoryClient({
             {editing && form.has_variants && (
               <div className="space-y-2 rounded-lg border border-border p-3">
                 <p className="text-xs text-muted-foreground">
-                  Produk ini punya varian. Edit nama/kategori di sini; kelola warna/ukuran lewat
-                  tombol Edit pada tiap varian.
+                  Produk ini punya varian. Stok diubah lewat Edit pada tiap varian, bukan di
+                  sini.
                 </p>
                 <Button
                   type="button"
@@ -1313,6 +1530,8 @@ export function ProductInventoryClient({
                 </Button>
               </div>
             )}
+
+            {editing && !form.has_variants && renderStockAdjust(editing.id)}
 
             <div className="space-y-1">
               <label className="text-sm font-medium">Deskripsi (opsional)</label>
@@ -1338,15 +1557,18 @@ export function ProductInventoryClient({
       <Dialog
         open={!!variantEdit}
         onOpenChange={(open) => {
-          if (!open) setVariantEdit(null);
+          if (!open) {
+            setVariantEdit(null);
+            setStockAdjust(null);
+          }
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="shrink-0 px-4 pt-4 pr-12">
             <DialogTitle>Edit Varian</DialogTitle>
           </DialogHeader>
           {variantEdit && (
-            <div className="space-y-3">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3">
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Warna</label>
@@ -1390,10 +1612,18 @@ export function ProductInventoryClient({
                   className="min-h-[44px] h-11"
                 />
               </div>
+              {renderStockAdjust(variantEdit.id)}
             </div>
           )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setVariantEdit(null)}>
+          <DialogFooter className="shrink-0 border-t px-4 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setVariantEdit(null);
+                setStockAdjust(null);
+              }}
+            >
               Batal
             </Button>
             <Button type="button" onClick={handleSaveVariantEdit} disabled={busy}>
