@@ -8,13 +8,13 @@
 # kesalahan yang sama atau merusak yang sudah berfungsi.
 # ============================================================
 
-## 📊 STATUS PROYEK (Juni 2026 — ~95% selesai)
+## 📊 STATUS PROYEK (Juli 2026 — inventori + varian aktif)
 
 ### ✅ Sudah Selesai
 - **Fase 1-11** selesai (lihat ROADMAP.md untuk detail)
 - Auth (login/register + auto-login + bypass email confirm)
 - Customers CRUD (list + modal tambah/edit/hapus)
-- Products CRUD (list + modal tambah/edit/hapus)
+- Products CRUD (list + modal tambah/edit/hapus) + **varian warna/ukuran** (parent/leaf)
 - Transactions (CRUD + HPP + Payment + Void + Invoice PDF)
 - Dashboard Owner (KPI realtime + chart + filter harian/mingguan/bulanan/tahunan + sparkline)
 - Dashboard Karyawan (KPI + recent transactions + pending)
@@ -23,12 +23,32 @@
 - Biaya Operasional CRUD (filter per bulan)
 - Logo kompresi WebP otomatis via sharp
 - PWA (manifest + icons + meta tags)
+- **Inventori multi-gudang** — Lokasi, Kategori, Barang, Stok (search/filter), Mutasi (Masuk/Keluar/Pindah)
 - **🐛 Fix 404 Cetak Nota & Pelunasan** — `.single()`→`.maybeSingle()`, custom not-found + error boundary
 - **🧹 Build cache cleanup** — hapus `next_corrupted`, update `.gitignore`
 
 ### ⏳ Belum Selesai
-- Fase 11b: Deployment Vercel (build verification, env setup, production deploy)
+- Fase 11b: Deployment Vercel (build verification, env setup, production deploy) — sering sudah live; cek ulang jika env berubah
 - Testing & QA final
+- SPA parity: void + port gudang/varian (lihat `MIGRATION-HANDOFF.md`)
+
+### 🔁 Migrasi SPA paralel (aktif)
+- Repo SPA: `../aplikasi-monitoring-spa` → GitHub `mebelonline-projek/Mebel-online-kasir-vite`
+- Beta: https://mebel-online-kasir-vite.mebelonline.workers.dev/
+- DB **shared** (Opsi C) dengan project Supabase monitoring ini
+- Rollback produksi: tag git `v1-next-stable`
+- **Syarat cutover:** UI SPA harus sama persis dengan app Next ini
+- Detail tahap: baca `aplikasi-monitoring-spa/MIGRATION-HANDOFF.md`
+- Jangan rewrite Next in-place untuk migrasi; Next tetap app harian sampai cutover
+- Catatan 31 Jul: search stok + varian + UX Gudang sudah di Next — port ke SPA saat modul gudang/kasir
+
+### Inventori — aturan singkat (31 Jul 2026)
+- Varian: `parent_id` / `warna` / `ukuran` — SQL `supabase/migrate_product_variants.sql` **sudah applied**
+- Kasir & stok hanya **leaf** (standalone atau child); parent shell tidak dijual
+- Edit barang/varian: satu **Simpan**; qty stok opsional → Mutasi IN/OUT
+- Hapus **barang** boleh meski ada stok; **kategori/gudang** tetap diblokir jika dipakai
+- Ranking cari (barang, stok, kasir): nama produk → warna/ukuran → kategori
+- Detail log: `CHANGELOG.md` bagian `[8.1.0]`
 
 ---
 
@@ -86,6 +106,7 @@ Ketiga fungsi di bawah menggunakan `search_path` multi-schema. JANGAN pernah diu
 | `supabase/fix_inventory_linter.sql` | Fix linter inventori (bucket listing + revoke apply_stock_change) |
 | `supabase/fix_anon_security_definer.sql` | Cabut EXECUTE anon dari create_user_profile / get_user_role (REVOKE PUBLIC) |
 | `supabase/migrate_inventory.sql` | Schema inventori multi-gudang + role GUDANG |
+| `supabase/migrate_product_variants.sql` | Kolom `parent_id`, `warna`, `ukuran` (sudah applied shared DB) |
 | `supabase/fix_get_user_role.sql` | Emergency fix untuk search_path (3 fungsi) |
 | `supabase/storage_bucket.sql` | Bucket logos + RLS |
 | `supabase/seed_dummy.sql` | Data dummy untuk testing |
@@ -109,6 +130,11 @@ Ketiga fungsi di bawah menggunakan `search_path` multi-schema. JANGAN pernah diu
 | Dashboard Owner | `/dashboard/owner` | ✅ Ada |
 | Dashboard Karyawan | `/dashboard/karyawan` | ✅ Ada |
 | Pengaturan | `/pengaturan` | ✅ Ada |
+| Inventori — Lokasi gudang | `/gudang` | ✅ Ada |
+| Inventori — Kategori | `/gudang/kategori` | ✅ Ada |
+| Inventori — Barang (+ varian) | `/gudang/barang` | ✅ Ada |
+| Inventori — Stok (search/filter) | `/gudang/stok` | ✅ Ada |
+| Inventori — Mutasi | `/gudang/mutasi` | ✅ Ada |
 | Login | `/login` | ✅ Ada |
 | Register | `/register` | ✅ Ada |
 

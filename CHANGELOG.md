@@ -51,6 +51,51 @@
 
 ## 📝 Log Perubahan
 
+### [8.1.0] — 2026-07-31 — Inventori: search stok, varian, UX Gudang/Kasir
+
+Ringkasan sesi fitur klien di **Next** (produksi harian). SPA hanya catat roadmap parity — jangan ulang di SPA kecuali port modul gudang/kasir.
+
+#### Fitur
+- **Search + filter stok** di `/gudang/stok` (nama, kategori, warna/ukuran, Stok Menipis)
+- **Varian produk** parent/child: SQL `parent_id`, `warna`, `ukuran` (`supabase/migrate_product_variants.sql` — **sudah dijalankan** di shared Supabase)
+- Buat barang **dengan atau tanpa** varian; stok/kasir hanya leaf (child atau standalone)
+- Stok awal saat create: gudang + qty (per varian jika bervarian)
+- **Sesuaikan stok di edit** barang/varian lewat Mutasi IN/OUT (satu tombol **Simpan**)
+- Kartu stok mobile bervarian: **satu kartu produk** + baris varian ringkas
+- Hapus barang **boleh meski ada stok** (CASCADE); kategori & gudang tetap diblokir jika dipakai/ada stok
+
+#### UX / perbaikan
+- Ranking pencarian barang & stok: **nama produk → warna/ukuran → kategori**
+- Ranking pencarian kasir (`SearchablePicker`): sama — nama produk utama diutamakan
+- Mutasi: label **Masuk / Keluar / Pindah** (+ riwayat Penjualan / Batal transaksi)
+- Subnav inventori: tab **Lokasi** (bukan “Gudang”); subtitle *Kelola barang dan stok*
+- Hapus dual aksi **Terapkan stok** vs **Simpan** (membingungkan)
+
+#### File kunci
+| File | Peran |
+|------|--------|
+| `supabase/migrate_product_variants.sql` | Kolom varian (shared DB) |
+| `lib/inventory.ts` | CRUD barang/varian + mutasi + hapus tanpa cek stok |
+| `lib/inventory-helpers.ts` | `productDisplayName`, `productSearchScore`, parent/leaf helpers |
+| `components/inventory/product-inventory-client.tsx` | UI barang + varian + edit+stok |
+| `components/inventory/stock-matrix-client.tsx` | Matriks stok + search + kartu grup |
+| `components/inventory/movement-client.tsx` | Form/riwayat Mutasi ID |
+| `components/inventory/gudang-subnav.tsx` | Tab Lokasi/Kategori/Barang/Stok/Mutasi |
+| `components/shared/searchable-picker.tsx` | Ranking pencarian picker |
+| `components/transactions/line-items-editor.tsx` | Kasir: label varian + rank search |
+
+#### Aturan bisnis (jangan dilanggar)
+- Parent shell: tidak dijual, tidak punya stok; ubah stok lewat **edit tiap varian**
+- Mutasi / Edge / SALE tetap per `product_id` leaf
+- Kategori: tidak hapus jika masih dipakai barang
+- Gudang: tidak hapus gudang penjualan / jika masih ada stok
+- Riwayat transaksi aman saat hapus barang (`product_id` SET NULL)
+
+#### Commits terkait (main)
+`10983e8` → `846e7ed` → `7a9439d` → `97a5ba5` → `8ff99c1` → `7b1cddc`
+
+---
+
 ### [8.0.0] — 2026-07-01 — ⚡ Optimistic Update (Instant Navigation)
 
 #### 🆕 Fitur Baru: Optimistic Update — Navigasi Instan ke Halaman Detail
