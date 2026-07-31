@@ -270,7 +270,8 @@ export function ProductListClient({
           <AlertDialogHeader>
             <AlertDialogTitle>Hapus Produk</AlertDialogTitle>
             <AlertDialogDescription>
-              Yakin hapus <strong>{deleteTarget?.name}</strong>? Ditolak jika masih ada stok.
+              Yakin hapus <strong>{deleteTarget?.name}</strong>? Stok di semua gudang ikut terhapus.
+              Riwayat transaksi tetap aman.
               Transaksi lama tetap aman.
             </AlertDialogDescription>
           </AlertDialogHeader>

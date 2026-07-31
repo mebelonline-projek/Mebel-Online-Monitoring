@@ -1021,25 +1021,13 @@ export async function deleteInventoryProduct(id: string): Promise<ActionState> {
       .select("id")
       .eq("parent_id", id);
 
-    const idsToCheck = [id, ...(children || []).map((c) => c.id)];
-    const { data: stocks } = await supabase
-      .from("warehouse_stocks")
-      .select("qty, product_id")
-      .in("product_id", idsToCheck);
-
-    if (stocks?.some((s) => s.qty > 0)) {
-      return {
-        success: false,
-        message: "Masih ada stok (termasuk varian). Mutasi OUT sampai 0 dulu sebelum hapus.",
-      };
-    }
-
     if (product.photo_url?.includes("/product-photos/")) {
       const oldPath = product.photo_url.split("/product-photos/")[1]?.split("?")[0];
       if (oldPath) await supabase.storage.from("product-photos").remove([oldPath]);
     }
 
-    // CASCADE menghapus anak jika hapus parent; hapus eksplisit juga aman
+    // Stok ikut terhapus (warehouse_stocks ON DELETE CASCADE).
+    // Riwayat transaksi/mutasi tetap (product_id SET NULL).
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) return { success: false, message: error.message };
     revalidateInventory();

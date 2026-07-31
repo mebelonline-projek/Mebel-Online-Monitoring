@@ -1806,7 +1806,7 @@ export function ProductInventoryClient({
                     isParentShellProduct(deleteTarget, initialProducts)
                       ? " beserta semua variannya"
                       : ""
-                  } akan dihapus. Ditolak jika masih ada stok.`
+                  } akan dihapus permanen, termasuk stok di semua gudang. Riwayat transaksi tetap aman.`
                 : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
