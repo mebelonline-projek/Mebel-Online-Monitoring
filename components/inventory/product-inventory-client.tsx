@@ -479,6 +479,71 @@ export function ProductInventoryClient({
     })();
   };
 
+  const validatePendingStockAdjust = ():
+    | { ok: true; skip: true }
+    | { ok: true; skip: false; qty: number; direction: "IN" | "OUT"; warehouseId: string; note: string }
+    | { ok: false; message: string } => {
+    if (!stockAdjust) return { ok: true, skip: true };
+    const raw = stockAdjust.qty.trim();
+    if (!raw) return { ok: true, skip: true };
+    const qty = Math.floor(Number(raw));
+    if (!stockAdjust.warehouse_id) {
+      return { ok: false, message: "Pilih gudang untuk ubah stok" };
+    }
+    if (!Number.isFinite(qty) || qty < 1) {
+      return { ok: false, message: "Qty stok minimal 1, atau kosongkan jika tidak ubah stok" };
+    }
+    if (stockAdjust.direction === "OUT") {
+      const available = getStockQty(
+        initialStocks,
+        stockAdjust.productId,
+        stockAdjust.warehouse_id
+      );
+      if (qty > available) {
+        return { ok: false, message: `Stok di gudang hanya ${available} pcs` };
+      }
+    }
+    return {
+      ok: true,
+      skip: false,
+      qty,
+      direction: stockAdjust.direction,
+      warehouseId: stockAdjust.warehouse_id,
+      note:
+        stockAdjust.note.trim() ||
+        (stockAdjust.direction === "IN"
+          ? "Penyesuaian stok dari edit barang"
+          : "Pengurangan stok dari edit barang"),
+    };
+  };
+
+  const applyPendingStockAdjust = async (
+    productId: string
+  ): Promise<{ ok: true; message: string | null } | { ok: false; message: string }> => {
+    const pending = validatePendingStockAdjust();
+    if (!pending.ok) return { ok: false, message: pending.message };
+    if (pending.skip) return { ok: true, message: null };
+
+    const result = await createStockMovement({
+      type: pending.direction,
+      product_id: productId,
+      qty: pending.qty,
+      from_warehouse_id: pending.direction === "OUT" ? pending.warehouseId : null,
+      to_warehouse_id: pending.direction === "IN" ? pending.warehouseId : null,
+      note: pending.note,
+    });
+    if (!result.success) {
+      return { ok: false, message: result.message || "Gagal mengubah stok" };
+    }
+    return {
+      ok: true,
+      message:
+        pending.direction === "IN"
+          ? `stok +${pending.qty} pcs`
+          : `stok −${pending.qty} pcs`,
+    };
+  };
+
   const handleSubmit = async () => {
     if (!form.name.trim() || form.name.trim().length < 2) {
       toast.error("Nama minimal 2 karakter");
@@ -524,6 +589,14 @@ export function ProductInventoryClient({
       return;
     }
 
+    if (editing && !form.has_variants) {
+      const pending = validatePendingStockAdjust();
+      if (!pending.ok) {
+        toast.error(pending.message);
+        return;
+      }
+    }
+
     const pendingPhoto = photoFile;
     const pendingCompress = photoCompressRef.current;
 
@@ -539,13 +612,30 @@ export function ProductInventoryClient({
     if (editing) {
       const productId = editing.id;
       const result = await updateInventoryProduct(productId, payload);
-      setBusy(false);
       if (!result.success) {
+        setBusy(false);
         toast.error(result.message);
         return;
       }
-      toast.success(result.message);
+
+      let stockNote: string | null = null;
+      if (!form.has_variants) {
+        const stockResult = await applyPendingStockAdjust(productId);
+        if (!stockResult.ok) {
+          setBusy(false);
+          toast.error(`Data tersimpan, tapi stok gagal: ${stockResult.message}`);
+          router.refresh();
+          return;
+        }
+        stockNote = stockResult.message;
+      }
+
+      setBusy(false);
+      toast.success(
+        stockNote ? `Barang diperbarui (${stockNote})` : result.message
+      );
       setDialogOpen(false);
+      setStockAdjust(null);
       router.refresh();
       if (pendingPhoto) {
         uploadPhotoInBackground(productId, pendingPhoto, pendingCompress);
@@ -600,6 +690,12 @@ export function ProductInventoryClient({
       toast.error("Isi warna dan/atau ukuran");
       return;
     }
+    const pending = validatePendingStockAdjust();
+    if (!pending.ok) {
+      toast.error(pending.message);
+      return;
+    }
+
     setBusy(true);
     const result = await updateInventoryVariant(variantEdit.id, {
       warna: variantEdit.warna,
@@ -607,66 +703,29 @@ export function ProductInventoryClient({
       base_price: Number(variantEdit.base_price) || 0,
       min_stock: Math.max(0, Number(variantEdit.min_stock) || 0),
     });
-    setBusy(false);
     if (!result.success) {
+      setBusy(false);
       toast.error(result.message);
       return;
     }
-    toast.success(result.message);
+
+    const stockResult = await applyPendingStockAdjust(variantEdit.id);
+    setBusy(false);
+    if (!stockResult.ok) {
+      toast.error(`Varian tersimpan, tapi stok gagal: ${stockResult.message}`);
+      setVariantEdit(null);
+      setStockAdjust(null);
+      router.refresh();
+      return;
+    }
+
+    toast.success(
+      stockResult.message
+        ? `Varian diperbarui (${stockResult.message})`
+        : result.message
+    );
     setVariantEdit(null);
     setStockAdjust(null);
-    router.refresh();
-  };
-
-  const handleAdjustStock = async () => {
-    if (!stockAdjust) return;
-    const qty = Math.floor(Number(stockAdjust.qty));
-    if (!stockAdjust.warehouse_id) {
-      toast.error("Pilih gudang");
-      return;
-    }
-    if (!Number.isFinite(qty) || qty < 1) {
-      toast.error("Qty minimal 1");
-      return;
-    }
-    if (stockAdjust.direction === "OUT") {
-      const available = getStockQty(
-        initialStocks,
-        stockAdjust.productId,
-        stockAdjust.warehouse_id
-      );
-      if (qty > available) {
-        toast.error(`Stok di gudang hanya ${available} pcs`);
-        return;
-      }
-    }
-
-    setBusy(true);
-    const result = await createStockMovement({
-      type: stockAdjust.direction,
-      product_id: stockAdjust.productId,
-      qty,
-      from_warehouse_id:
-        stockAdjust.direction === "OUT" ? stockAdjust.warehouse_id : null,
-      to_warehouse_id:
-        stockAdjust.direction === "IN" ? stockAdjust.warehouse_id : null,
-      note:
-        stockAdjust.note.trim() ||
-        (stockAdjust.direction === "IN"
-          ? "Penyesuaian stok dari edit barang"
-          : "Pengurangan stok dari edit barang"),
-    });
-    setBusy(false);
-    if (!result.success) {
-      toast.error(result.message);
-      return;
-    }
-    toast.success(
-      stockAdjust.direction === "IN"
-        ? `Stok ditambah +${qty} pcs`
-        : `Stok dikurangi −${qty} pcs`
-    );
-    setStockAdjust((s) => (s ? { ...s, qty: "", note: "" } : s));
     router.refresh();
   };
 
@@ -736,9 +795,10 @@ export function ProductInventoryClient({
     return (
       <div className="rounded-lg border border-border p-3 space-y-3">
         <div>
-          <p className="text-sm font-medium">Sesuaikan stok</p>
+          <p className="text-sm font-medium">Ubah stok (opsional)</p>
           <p className="text-xs text-muted-foreground">
-            Tambah atau kurangi stok di gudang. Tidak mengubah data barang.
+            Isi qty hanya jika ingin menambah/mengurangi stok sekarang. Kosongkan jika hanya
+            ubah data. Simpan akan menerapkan semuanya.
           </p>
         </div>
         <div className="space-y-1">
@@ -804,7 +864,7 @@ export function ProductInventoryClient({
             onChange={(e) =>
               setStockAdjust((s) => (s ? { ...s, qty: e.target.value } : s))
             }
-            placeholder="1"
+            placeholder="Kosongkan jika tidak ubah stok"
             className="min-h-[44px] h-11"
           />
         </div>
@@ -819,15 +879,6 @@ export function ProductInventoryClient({
             className="min-h-[44px] h-11"
           />
         </div>
-        <Button
-          type="button"
-          variant="secondary"
-          className="w-full min-h-[44px]"
-          onClick={handleAdjustStock}
-          disabled={busy || activeWarehouses.length === 0}
-        >
-          Terapkan stok
-        </Button>
       </div>
     );
   };

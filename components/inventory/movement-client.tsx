@@ -28,7 +28,28 @@ import { ArrowLeftRight } from "lucide-react";
 
 type FormMovementType = "IN" | "OUT" | "TRANSFER";
 
-const FORM_TYPES: FormMovementType[] = ["IN", "OUT", "TRANSFER"];
+const FORM_TYPES: { value: FormMovementType; label: string }[] = [
+  { value: "IN", label: "Masuk" },
+  { value: "OUT", label: "Keluar" },
+  { value: "TRANSFER", label: "Pindah" },
+];
+
+function movementTypeLabel(type: MovementRow["type"]): string {
+  switch (type) {
+    case "IN":
+      return "Masuk";
+    case "OUT":
+      return "Keluar";
+    case "TRANSFER":
+      return "Pindah";
+    case "SALE":
+      return "Penjualan";
+    case "VOID_RESTORE":
+      return "Batal transaksi";
+    default:
+      return type;
+  }
+}
 
 function movementBadgeVariant(
   type: MovementRow["type"]
@@ -104,7 +125,7 @@ export function MovementClient({
       toast.error(result.message);
       return;
     }
-    toast.success(result.message);
+    toast.success(`Mutasi ${movementTypeLabel(type)} berhasil`);
     setQty("1");
     setNote("");
     router.refresh();
@@ -130,7 +151,7 @@ export function MovementClient({
           <div>
             <h2 className="font-semibold text-lg">Form Mutasi</h2>
             <p className="text-sm text-muted-foreground">
-              IN masuk · OUT keluar · TRANSFER antar gudang
+              Masuk = barang datang · Keluar = barang keluar · Pindah = antar gudang
             </p>
           </div>
           <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-2">
@@ -142,8 +163,8 @@ export function MovementClient({
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 {FORM_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                  <option key={t.value} value={t.value}>
+                    {t.label}
                   </option>
                 ))}
               </select>
@@ -243,7 +264,9 @@ export function MovementClient({
                 <Card key={m.id} className="shadow-sm">
                   <CardContent className="p-4 space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <Badge variant={movementBadgeVariant(m.type)}>{m.type}</Badge>
+                      <Badge variant={movementBadgeVariant(m.type)}>
+                        {movementTypeLabel(m.type)}
+                      </Badge>
                       <span className="text-xs text-muted-foreground">
                         {formatDate(m.created_at)}
                       </span>
@@ -279,7 +302,9 @@ export function MovementClient({
                         {formatDate(m.created_at)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={movementBadgeVariant(m.type)}>{m.type}</Badge>
+                        <Badge variant={movementBadgeVariant(m.type)}>
+                        {movementTypeLabel(m.type)}
+                      </Badge>
                       </TableCell>
                       <TableCell className="font-medium">
                         {productName(m.product_id)}

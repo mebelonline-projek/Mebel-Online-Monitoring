@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Warehouse, Tags, Package, Boxes, ArrowLeftRight } from "lucide-react";
 
 const items = [
-  { href: "/gudang", label: "Gudang", icon: Warehouse, exact: true },
+  { href: "/gudang", label: "Lokasi", icon: Warehouse, exact: true },
   { href: "/gudang/kategori", label: "Kategori", icon: Tags },
   { href: "/gudang/barang", label: "Barang", icon: Package },
   { href: "/gudang/stok", label: "Stok", icon: Boxes },
@@ -20,7 +20,7 @@ export function GudangSubnav() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Inventori Gudang</h1>
-        <p className="text-muted-foreground text-sm mt-1">Kelola stok multi gudang</p>
+        <p className="text-muted-foreground text-sm mt-1">Kelola barang dan stok</p>
       </div>
 
       <nav
