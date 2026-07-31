@@ -99,6 +99,7 @@ type VariantDraft = {
   warna: string;
   ukuran: string;
   base_price: string;
+  initial_qty: string;
 };
 
 type VariantEditState = {
@@ -159,6 +160,7 @@ function newVariantDraft(basePrice = ""): VariantDraft {
     warna: "",
     ukuran: "",
     base_price: basePrice,
+    initial_qty: "0",
   };
 }
 
@@ -202,6 +204,8 @@ export function ProductInventoryClient({
     ukuran: "",
     base_price: "",
     min_stock: "0",
+    warehouse_id: defaultWarehouseId,
+    initial_qty: "0",
   });
   const photoCompressRef = useRef<Promise<File> | null>(null);
 
@@ -236,14 +240,45 @@ export function ProductInventoryClient({
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return initialProducts.filter((p) => {
+    const parentNameById = new Map(
+      initialProducts.filter((p) => !p.parent_id).map((p) => [p.id, p.name])
+    );
+
+    const matched = initialProducts.filter((p) => {
       const cat = categoryName(p);
       if (categoryFilter && p.category_id !== categoryFilter) return false;
       if (!q) return true;
-      const hay = [p.name, cat, p.warna || "", p.ukuran || "", productDisplayName(p)]
+      const parentName = p.parent_id ? parentNameById.get(p.parent_id) || "" : "";
+      const hay = [
+        p.name,
+        parentName,
+        cat,
+        p.warna || "",
+        p.ukuran || "",
+        productDisplayName(p),
+      ]
         .join(" ")
         .toLowerCase();
       return hay.includes(q);
+    });
+
+    if (!q && !categoryFilter) return matched;
+
+    // Jika nama produk utama cocok, sertakan semua variannya (dan sebaliknya)
+    const matchedIds = new Set(matched.map((p) => p.id));
+    const parentIdsToInclude = new Set<string>();
+    for (const p of matched) {
+      if (p.parent_id) parentIdsToInclude.add(p.parent_id);
+      else if (isParentShellProduct(p, initialProducts)) parentIdsToInclude.add(p.id);
+    }
+    for (const p of initialProducts) {
+      if (p.parent_id && parentIdsToInclude.has(p.parent_id)) matchedIds.add(p.id);
+      if (!p.parent_id && parentIdsToInclude.has(p.id)) matchedIds.add(p.id);
+    }
+
+    return initialProducts.filter((p) => {
+      if (categoryFilter && p.category_id !== categoryFilter) return false;
+      return matchedIds.has(p.id);
     });
   }, [initialProducts, initialCategories, searchQuery, categoryFilter]);
 
@@ -261,25 +296,14 @@ export function ProductInventoryClient({
 
     for (const p of filtered) {
       if (p.parent_id) continue;
-      const kids =
-        childrenByParent.get(p.id) ||
-        initialProducts.filter((c) => c.parent_id === p.id).filter((c) => {
-          // include siblings even if filter hit parent only
-          if (!searchQuery.trim() && !categoryFilter) return true;
-          return filtered.some((f) => f.id === c.id) || filtered.some((f) => f.id === p.id);
-        });
-
-      // When searching a variant, ensure parent group appears
-      const visibleKids = kids.filter((c) => filtered.some((f) => f.id === c.id));
-      if (visibleKids.length > 0 || isParentShellProduct(p, initialProducts)) {
-        for (const c of visibleKids) used.add(c.id);
+      const kids = childrenByParent.get(p.id) || [];
+      if (kids.length > 0 || isParentShellProduct(p, initialProducts)) {
+        for (const c of kids) used.add(c.id);
         used.add(p.id);
         result.push({
           key: p.id,
           parent: p,
-          variants: visibleKids.length
-            ? visibleKids
-            : kids.filter((c) => filtered.some((f) => f.id === c.id || f.id === p.id)),
+          variants: kids,
           isGroup: true,
         });
       } else {
@@ -290,18 +314,21 @@ export function ProductInventoryClient({
 
     for (const p of filtered) {
       if (!p.parent_id || used.has(p.id)) continue;
-      const parent =
-        initialProducts.find((x) => x.id === p.parent_id) || p;
+      const parent = initialProducts.find((x) => x.id === p.parent_id) || p;
+      const siblings = filtered.filter(
+        (c) => c.parent_id === p.parent_id && !used.has(c.id)
+      );
+      for (const s of siblings) used.add(s.id);
       result.push({
-        key: `orphan-${p.id}`,
+        key: `orphan-${parent.id || p.id}`,
         parent,
-        variants: [p],
+        variants: siblings.length ? siblings : [p],
         isGroup: true,
       });
     }
 
     return result;
-  }, [filtered, initialProducts, searchQuery, categoryFilter]);
+  }, [filtered, initialProducts]);
 
   const isFiltered = Boolean(searchQuery.trim()) || Boolean(categoryFilter);
 
@@ -431,7 +458,16 @@ export function ProductInventoryClient({
     }
 
     const initialQty = Math.max(0, Number(form.initial_qty) || 0);
-    if (!editing && !form.has_variants && initialQty > 0 && !form.warehouse_id) {
+    if (!editing && form.has_variants) {
+      const variantStockTotal = variantDrafts.reduce(
+        (s, v) => s + Math.max(0, Number(v.initial_qty) || 0),
+        0
+      );
+      if (variantStockTotal > 0 && !form.warehouse_id) {
+        toast.error("Pilih gudang untuk stok awal");
+        return;
+      }
+    } else if (!editing && initialQty > 0 && !form.warehouse_id) {
       toast.error("Pilih gudang untuk stok awal");
       return;
     }
@@ -467,7 +503,7 @@ export function ProductInventoryClient({
 
     const result = await createInventoryProduct({
       ...payload,
-      warehouse_id: form.has_variants ? null : form.warehouse_id || null,
+      warehouse_id: form.warehouse_id || null,
       initial_qty: form.has_variants ? 0 : initialQty,
       variants: form.has_variants
         ? variantDrafts.map((v) => ({
@@ -475,6 +511,7 @@ export function ProductInventoryClient({
             ukuran: v.ukuran.trim(),
             base_price: Number(v.base_price) || Number(form.base_price) || 0,
             min_stock: Math.max(0, Number(form.min_stock) || 0),
+            initial_qty: Math.max(0, Number(v.initial_qty) || 0),
           }))
         : undefined,
     });
@@ -528,10 +565,30 @@ export function ProductInventoryClient({
     router.refresh();
   };
 
+  const openAddVariant = (p: InventoryProductRow) => {
+    const parent = p.parent_id
+      ? initialProducts.find((x) => x.id === p.parent_id) || p
+      : p;
+    setAddVariantParent(parent);
+    setAddVariantForm({
+      warna: "",
+      ukuran: "",
+      base_price: String(parent.base_price),
+      min_stock: String(parent.min_stock),
+      warehouse_id: defaultWarehouseId,
+      initial_qty: "0",
+    });
+  };
+
   const handleAddVariant = async () => {
     if (!addVariantParent) return;
     if (!addVariantForm.warna.trim() && !addVariantForm.ukuran.trim()) {
       toast.error("Isi warna dan/atau ukuran");
+      return;
+    }
+    const initialQty = Math.max(0, Number(addVariantForm.initial_qty) || 0);
+    if (initialQty > 0 && !addVariantForm.warehouse_id) {
+      toast.error("Pilih gudang untuk stok awal");
       return;
     }
     setBusy(true);
@@ -540,6 +597,8 @@ export function ProductInventoryClient({
       ukuran: addVariantForm.ukuran,
       base_price: Number(addVariantForm.base_price) || addVariantParent.base_price,
       min_stock: Math.max(0, Number(addVariantForm.min_stock) || 0),
+      warehouse_id: addVariantForm.warehouse_id || null,
+      initial_qty: initialQty,
     });
     setBusy(false);
     if (!result.success) {
@@ -691,17 +750,10 @@ export function ProductInventoryClient({
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            setAddVariantParent(p);
-                            setAddVariantForm({
-                              warna: "",
-                              ukuran: "",
-                              base_price: String(p.base_price),
-                              min_stock: String(p.min_stock),
-                            });
-                          }}
+                          onClick={() => openAddVariant(p)}
                         >
-                          + Varian
+                          <Plus className="w-3.5 h-3.5" />
+                          Tambah Varian
                         </Button>
                         <Button
                           size="sm"
@@ -784,17 +836,10 @@ export function ProductInventoryClient({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => {
-                          setAddVariantParent(g.parent);
-                          setAddVariantForm({
-                            warna: "",
-                            ukuran: "",
-                            base_price: String(g.parent.base_price),
-                            min_stock: String(g.parent.min_stock),
-                          });
-                        }}
+                        onClick={() => openAddVariant(g.parent)}
                       >
-                        + Varian
+                        <Plus className="w-3.5 h-3.5" />
+                        Tambah Varian
                       </Button>
                       <Button
                         size="sm"
@@ -811,7 +856,7 @@ export function ProductInventoryClient({
             })}
           </div>
 
-          <Card className="shadow-sm overflow-hidden hidden md:block">
+          <Card className="shadow-sm hidden md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -820,7 +865,7 @@ export function ProductInventoryClient({
                   <TableHead>Harga</TableHead>
                   <TableHead>Min</TableHead>
                   <TableHead>Stok</TableHead>
-                  <TableHead className="w-[140px]">Aksi</TableHead>
+                  <TableHead className="w-[220px]">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -865,20 +910,13 @@ export function ProductInventoryClient({
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              className="h-8 px-2 text-xs"
-                              onClick={() => {
-                                setAddVariantParent(p);
-                                setAddVariantForm({
-                                  warna: "",
-                                  ukuran: "",
-                                  base_price: String(p.base_price),
-                                  min_stock: String(p.min_stock),
-                                });
-                              }}
+                              className="h-8 gap-1"
+                              onClick={() => openAddVariant(p)}
                             >
-                              + Varian
+                              <Plus className="w-3.5 h-3.5" />
+                              Varian
                             </Button>
                             <Button
                               variant="ghost"
@@ -923,20 +961,13 @@ export function ProductInventoryClient({
                               Edit
                             </Button>
                             <Button
-                              variant="ghost"
+                              variant="outline"
                               size="sm"
-                              className="h-8"
-                              onClick={() => {
-                                setAddVariantParent(g.parent);
-                                setAddVariantForm({
-                                  warna: "",
-                                  ukuran: "",
-                                  base_price: String(g.parent.base_price),
-                                  min_stock: String(g.parent.min_stock),
-                                });
-                              }}
+                              className="h-8 gap-1"
+                              onClick={() => openAddVariant(g.parent)}
                             >
-                              + Varian
+                              <Plus className="w-3.5 h-3.5" />
+                              Varian
                             </Button>
                             <Button
                               variant="ghost"
@@ -1173,18 +1204,39 @@ export function ProductInventoryClient({
                             />
                           </div>
                         </div>
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium">Harga jual</label>
-                          <CurrencyInput
-                            value={v.base_price}
-                            onChange={(val) =>
-                              setVariantDrafts((list) =>
-                                list.map((x) =>
-                                  x.key === v.key ? { ...x, base_price: val } : x
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">Harga jual</label>
+                            <CurrencyInput
+                              value={v.base_price}
+                              onChange={(val) =>
+                                setVariantDrafts((list) =>
+                                  list.map((x) =>
+                                    x.key === v.key ? { ...x, base_price: val } : x
+                                  )
                                 )
-                              )
-                            }
-                          />
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium">Stok awal</label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={v.initial_qty}
+                              onChange={(e) =>
+                                setVariantDrafts((list) =>
+                                  list.map((x) =>
+                                    x.key === v.key
+                                      ? { ...x, initial_qty: e.target.value }
+                                      : x
+                                  )
+                                )
+                              }
+                              placeholder="0"
+                              className="min-h-[44px] h-11"
+                            />
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1200,14 +1252,15 @@ export function ProductInventoryClient({
                       Tambah Varian
                     </Button>
                     <p className="text-xs text-muted-foreground">
-                      Akan dibuat {variantDrafts.length} varian. Stok diisi lewat Mutasi IN.
+                      Akan dibuat {variantDrafts.length} varian. Stok awal masuk ke gudang yang
+                      dipilih di bawah.
                     </p>
                   </div>
                 )}
               </div>
             )}
 
-            {!editing && !form.has_variants && (
+            {!editing && (
               <>
                 <div className="space-y-1">
                   <label className="text-sm font-medium">Gudang stok awal</label>
@@ -1224,25 +1277,41 @@ export function ProductInventoryClient({
                     ))}
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Qty stok awal</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={form.initial_qty}
-                    onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
-                    placeholder="0"
-                    className="min-h-[44px] h-11"
-                  />
-                </div>
+                {!form.has_variants && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium">Qty stok awal</label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={form.initial_qty}
+                      onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
+                      placeholder="0"
+                      className="min-h-[44px] h-11"
+                    />
+                  </div>
+                )}
               </>
             )}
 
             {editing && form.has_variants && (
-              <p className="text-xs text-muted-foreground rounded-lg border border-border p-3">
-                Produk ini punya varian. Edit nama/kategori di sini; kelola warna/ukuran lewat
-                tombol Edit pada tiap varian.
-              </p>
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  Produk ini punya varian. Edit nama/kategori di sini; kelola warna/ukuran lewat
+                  tombol Edit pada tiap varian.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full min-h-[44px] gap-1"
+                  onClick={() => {
+                    setDialogOpen(false);
+                    openAddVariant(editing);
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                  Tambah Varian Baru
+                </Button>
+              </div>
             )}
 
             <div className="space-y-1">
@@ -1375,6 +1444,36 @@ export function ProductInventoryClient({
               <CurrencyInput
                 value={addVariantForm.base_price}
                 onChange={(val) => setAddVariantForm((f) => ({ ...f, base_price: val }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Gudang stok awal</label>
+              <select
+                value={addVariantForm.warehouse_id}
+                onChange={(e) =>
+                  setAddVariantForm((f) => ({ ...f, warehouse_id: e.target.value }))
+                }
+                className="flex min-h-[44px] h-11 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              >
+                {activeWarehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                    {w.is_sales_warehouse ? " (penjualan)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Qty stok awal</label>
+              <Input
+                type="number"
+                min={0}
+                value={addVariantForm.initial_qty}
+                onChange={(e) =>
+                  setAddVariantForm((f) => ({ ...f, initial_qty: e.target.value }))
+                }
+                placeholder="0"
+                className="min-h-[44px] h-11"
               />
             </div>
           </div>

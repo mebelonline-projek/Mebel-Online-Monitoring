@@ -124,7 +124,11 @@ export function StockMatrixClient({
 
   const filteredProducts = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return sellableProducts.filter((p) => {
+    const parentNameById = new Map(
+      products.filter((p) => !p.parent_id).map((p) => [p.id, p.name])
+    );
+
+    const matched = sellableProducts.filter((p) => {
       const cat = categoryName(p);
       if (categoryFilter && p.category_id !== categoryFilter) return false;
 
@@ -132,8 +136,10 @@ export function StockMatrixClient({
       if (lowStockOnly && !(total < p.min_stock)) return false;
 
       if (!q) return true;
+      const parentName = p.parent_id ? parentNameById.get(p.parent_id) || "" : "";
       const hay = [
         p.name,
+        parentName,
         cat,
         p.warna || "",
         p.ukuran || "",
@@ -143,7 +149,36 @@ export function StockMatrixClient({
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [sellableProducts, categories, searchQuery, categoryFilter, lowStockOnly, stocks]);
+
+    if (!q) return matched;
+
+    // Nama produk utama cocok → tampilkan semua variannya
+    const matchedIds = new Set(matched.map((p) => p.id));
+    const parentIds = new Set(
+      matched.filter((p) => p.parent_id).map((p) => p.parent_id as string)
+    );
+    for (const p of matched) {
+      if (!p.parent_id && p.name.toLowerCase().includes(q)) {
+        // standalone name match — already in set
+      }
+    }
+    // Also: if any sellable shares a parent whose name matches q, include siblings
+    for (const p of sellableProducts) {
+      if (!p.parent_id) continue;
+      const parentName = parentNameById.get(p.parent_id) || "";
+      if (parentName.toLowerCase().includes(q) || matchedIds.has(p.id)) {
+        if (categoryFilter && p.category_id !== categoryFilter) continue;
+        if (lowStockOnly) {
+          const total = getTotalStock(stocks, p.id);
+          if (!(total < p.min_stock)) continue;
+        }
+        matchedIds.add(p.id);
+        parentIds.add(p.parent_id);
+      }
+    }
+
+    return sellableProducts.filter((p) => matchedIds.has(p.id));
+  }, [sellableProducts, products, categories, searchQuery, categoryFilter, lowStockOnly, stocks]);
 
   const groups = useMemo(() => {
     // Include parent shells only for grouping labels when any child remains

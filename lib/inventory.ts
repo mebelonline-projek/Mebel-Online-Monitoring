@@ -60,6 +60,7 @@ export type ProductVariantInput = {
   ukuran?: string;
   base_price: number;
   min_stock?: number;
+  initial_qty?: number;
 };
 
 export type StockRow = {
@@ -108,6 +109,7 @@ const variantRowSchema = z
     ukuran: z.string().max(80).optional().or(z.literal("")),
     base_price: z.coerce.number().min(0).max(999_999_999),
     min_stock: z.coerce.number().int().min(0).max(999_999).optional(),
+    initial_qty: z.coerce.number().int().min(0).max(999_999).optional(),
   })
   .refine(
     (v) => Boolean(v.warna?.trim()) || Boolean(v.ukuran?.trim()),
@@ -126,6 +128,18 @@ const inventoryVariantUpdateSchema = z.object({
   ukuran: z.string().max(80).optional().or(z.literal("")),
   base_price: z.coerce.number().min(0).max(999_999_999),
   min_stock: z.coerce.number().int().min(0).max(999_999),
+}).refine(
+  (v) => Boolean(v.warna?.trim()) || Boolean(v.ukuran?.trim()),
+  { message: "Isi warna dan/atau ukuran" }
+);
+
+const inventoryVariantAddSchema = z.object({
+  warna: z.string().max(80).optional().or(z.literal("")),
+  ukuran: z.string().max(80).optional().or(z.literal("")),
+  base_price: z.coerce.number().min(0).max(999_999_999),
+  min_stock: z.coerce.number().int().min(0).max(999_999),
+  warehouse_id: dbId("ID gudang tidak valid").optional().nullable().or(z.literal("")),
+  initial_qty: z.coerce.number().int().min(0).max(999_999).optional(),
 }).refine(
   (v) => Boolean(v.warna?.trim()) || Boolean(v.ukuran?.trim()),
   { message: "Isi warna dan/atau ukuran" }
@@ -498,7 +512,8 @@ export async function createInventoryProduct(
 
     const initialQty = parsed.data.initial_qty ?? 0;
     const warehouseId = parsed.data.warehouse_id || null;
-    if (!hasVariants && initialQty > 0 && !warehouseId) {
+    const variantStockTotal = variants.reduce((s, v) => s + (v.initial_qty ?? 0), 0);
+    if (!warehouseId && (hasVariants ? variantStockTotal > 0 : initialQty > 0)) {
       return { success: false, message: "Pilih gudang untuk stok awal" };
     }
 
@@ -573,13 +588,40 @@ export async function createInventoryProduct(
             message: `Varian dibuat, tapi gagal inisialisasi stok: ${stockErr}`,
           };
         }
+
+        const vQty = v.initial_qty ?? 0;
+        if (vQty > 0 && warehouseId) {
+          const admin = createAdminClient();
+          const { error: inErr } = await admin.rpc("apply_stock_change", {
+            p_type: "IN",
+            p_product_id: child.id,
+            p_qty: vQty,
+            p_from_warehouse_id: null,
+            p_to_warehouse_id: warehouseId,
+            p_note: "Stok awal saat tambah varian",
+            p_reference_type: "PRODUCT",
+            p_reference_id: child.id,
+            p_created_by: auth.data.userId,
+          });
+          if (inErr) {
+            await supabase.from("products").delete().eq("id", parent.id);
+            return {
+              success: false,
+              message: `Varian dibuat, tapi stok awal gagal: ${inErr.message}`,
+            };
+          }
+        }
       }
 
       revalidateInventory();
+      const stockNote =
+        variantStockTotal > 0
+          ? ` (+${variantStockTotal} pcs stok awal)`
+          : " (stok 0 — isi via Mutasi IN)";
       return {
         success: true,
         data: { id: parent.id },
-        message: `Produk ditambahkan dengan ${variants.length} varian (stok 0 — isi via Mutasi IN)`,
+        message: `Produk ditambahkan dengan ${variants.length} varian${stockNote}`,
       };
     }
 
@@ -714,12 +756,12 @@ export async function updateInventoryProduct(
 
 export async function addInventoryVariant(
   parentId: string,
-  input: z.infer<typeof inventoryVariantUpdateSchema>
+  input: z.infer<typeof inventoryVariantAddSchema>
 ): Promise<ActionState<{ id: string }>> {
   try {
     const auth = await requireInventoryWriter();
     if (!auth.success) return auth;
-    const parsed = inventoryVariantUpdateSchema.safeParse(input);
+    const parsed = inventoryVariantAddSchema.safeParse(input);
     if (!parsed.success) {
       return { success: false, message: parsed.error.issues[0]?.message || "Validasi gagal" };
     }
@@ -772,6 +814,12 @@ export async function addInventoryVariant(
       return { success: false, message: "Varian dengan warna/ukuran ini sudah ada" };
     }
 
+    const initialQty = parsed.data.initial_qty ?? 0;
+    const warehouseId = parsed.data.warehouse_id || null;
+    if (initialQty > 0 && !warehouseId) {
+      return { success: false, message: "Pilih gudang untuk stok awal" };
+    }
+
     const { data: child, error } = await supabase
       .from("products")
       .insert({
@@ -803,8 +851,37 @@ export async function addInventoryVariant(
       return { success: false, message: `Gagal inisialisasi stok: ${stockErr}` };
     }
 
+    if (initialQty > 0 && warehouseId) {
+      const admin = createAdminClient();
+      const { error: inErr } = await admin.rpc("apply_stock_change", {
+        p_type: "IN",
+        p_product_id: child.id,
+        p_qty: initialQty,
+        p_from_warehouse_id: null,
+        p_to_warehouse_id: warehouseId,
+        p_note: "Stok awal saat tambah varian",
+        p_reference_type: "PRODUCT",
+        p_reference_id: child.id,
+        p_created_by: auth.data.userId,
+      });
+      if (inErr) {
+        await supabase.from("products").delete().eq("id", child.id);
+        return {
+          success: false,
+          message: `Varian dibuat, tapi stok awal gagal: ${inErr.message}`,
+        };
+      }
+    }
+
     revalidateInventory();
-    return { success: true, data: { id: child.id }, message: "Varian ditambahkan" };
+    return {
+      success: true,
+      data: { id: child.id },
+      message:
+        initialQty > 0
+          ? `Varian ditambahkan (+${initialQty} pcs stok awal)`
+          : "Varian ditambahkan",
+    };
   } catch (e) {
     return { success: false, message: e instanceof Error ? e.message : "Terjadi kesalahan" };
   }
