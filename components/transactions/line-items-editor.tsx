@@ -61,6 +61,10 @@ export function LineItemsEditor({
       id: p.id,
       label,
       sublabel: `${p.category} — ${stockHint}`,
+      searchName: p.name,
+      searchWarna: p.warna,
+      searchUkuran: p.ukuran,
+      searchCategory: p.category,
     };
   });
 

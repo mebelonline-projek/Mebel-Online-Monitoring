@@ -28,6 +28,7 @@ import type { CustomerRow } from "@/lib/customers";
 import type { ProductRow } from "@/lib/products";
 import type { PickerStock, PickerWarehouse } from "@/lib/picker-client";
 import { getStockQty } from "@/lib/picker-client";
+import { productDisplayName } from "@/lib/inventory-helpers";
 
 function formatApiErrors(errors?: Record<string, string[] | undefined>): string | undefined {
   if (!errors) return undefined;
@@ -310,8 +311,12 @@ export function TransactionForm({
 
   const productOptions = products.map((p) => ({
     id: p.id,
-    label: p.name,
+    label: productDisplayName(p),
     sublabel: `${p.category} — ${formatCurrency(p.base_price)}`,
+    searchName: p.name,
+    searchWarna: p.warna,
+    searchUkuran: p.ukuran,
+    searchCategory: p.category,
   }));
 
   const formFields = (
