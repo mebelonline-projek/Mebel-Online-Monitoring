@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { CurrencyInput } from "@/components/ui/currency-input";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Save, ArrowLeft } from "lucide-react";
 import { SearchablePicker } from "@/components/shared/searchable-picker";
@@ -29,6 +30,11 @@ import type { ProductRow } from "@/lib/products";
 import type { PickerStock, PickerWarehouse } from "@/lib/picker-client";
 import { getStockQty } from "@/lib/picker-client";
 import { productDisplayName } from "@/lib/inventory-helpers";
+import {
+  getTransactionDateBounds,
+  getWibDateString,
+  wibNoonISO,
+} from "@/lib/date-utils";
 
 function formatApiErrors(errors?: Record<string, string[] | undefined>): string | undefined {
   if (!errors) return undefined;
@@ -89,10 +95,14 @@ export function TransactionForm({
     payment_method: "TUNAI",
     dp_amount: initialData?.dp_amount?.toString() || "",
   });
+  const [transactionDate, setTransactionDate] = useState(getWibDateString);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lineItems, setLineItems] = useState<LineItem[]>(createDefaultLineItems);
   const useLineItems = quickSale && !isEdit;
+  const dateBounds = getTransactionDateBounds();
+  const todayWib = dateBounds.today;
+  const isBackdated = !isEdit && transactionDate !== todayWib;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
@@ -150,11 +160,12 @@ export function TransactionForm({
       payment_method: form.payment_method,
       dp_amount: form.payment_type === "DP" ? form.dp_amount : 0,
       items: itemsPayload && itemsPayload.length > 0 ? itemsPayload : undefined,
+      ...(isEdit ? {} : { transaction_date: transactionDate }),
     };
 
-    const parsed = useLineItems
-      ? transactionCreateSchema.safeParse(schemaData)
-      : transactionSchema.safeParse(schemaData);
+    const parsed = isEdit
+      ? transactionSchema.safeParse(schemaData)
+      : transactionCreateSchema.safeParse(schemaData);
 
     if (!parsed.success) {
       const errors: Record<string, string> = {};
@@ -174,7 +185,25 @@ export function TransactionForm({
 
     setIsSubmitting(true);
     try {
-      const payload = {
+      const payload: {
+        customer_id?: string;
+        product_id?: string;
+        customer_name: string;
+        description: string;
+        final_price: number;
+        payment_type: "CASH" | "DP";
+        payment_method: "TUNAI" | "TRANSFER";
+        dp_amount: number;
+        transaction_date?: string;
+        items?: Array<{
+          product_id?: string;
+          product_name: string;
+          quantity: number;
+          unit_price: number;
+          note?: string;
+          warehouse_id?: string;
+        }>;
+      } = {
         customer_id: parsed.data.customer_id || undefined,
         product_id: parsed.data.product_id || undefined,
         customer_name: parsed.data.customer_name ?? "",
@@ -184,24 +213,14 @@ export function TransactionForm({
         payment_method: parsed.data.payment_method,
         dp_amount: parsed.data.payment_type === "DP" ? parsed.data.dp_amount : 0,
         items: "items" in parsed.data ? parsed.data.items : undefined,
-      } as {
-        customer_id?: string;
-        product_id?: string;
-        customer_name: string;
-        description: string;
-        final_price: number;
-        payment_type: "CASH" | "DP";
-        payment_method: "TUNAI" | "TRANSFER";
-        dp_amount: number;
-        items?: Array<{
-          product_id?: string;
-          product_name: string;
-          quantity: number;
-          unit_price: number;
-          note?: string;
-          warehouse_id?: string;
-        }>;
       };
+
+      if (!isEdit) {
+        payload.transaction_date =
+          "transaction_date" in parsed.data && parsed.data.transaction_date
+            ? parsed.data.transaction_date
+            : transactionDate;
+      }
 
       if (isEdit && transactionId) {
         const response = await fetch("/api/transactions", {
@@ -241,6 +260,7 @@ export function TransactionForm({
             payment_method: "TUNAI",
             dp_amount: "",
           });
+          setTransactionDate(getWibDateString());
           setLineItems(createDefaultLineItems());
           return;
         }
@@ -280,7 +300,9 @@ export function TransactionForm({
               payment_type: payload.payment_type,
               dp_amount: payload.dp_amount,
               status: payload.payment_type === "CASH" ? "LUNAS" : "DP",
-              created_at: new Date().toISOString(),
+              created_at: payload.transaction_date
+                ? wibNoonISO(payload.transaction_date)
+                : new Date().toISOString(),
             })
           );
         } catch {
@@ -452,6 +474,38 @@ export function TransactionForm({
           </Button>
         </div>
       </div>
+
+      {!isEdit && (
+        <div className="space-y-1.5">
+          <label htmlFor="transaction_date" className="text-sm font-medium">
+            Tanggal transaksi
+          </label>
+          <Input
+            id="transaction_date"
+            type="date"
+            value={transactionDate}
+            min={dateBounds.min}
+            max={dateBounds.today}
+            onChange={(e) => setTransactionDate(e.target.value)}
+            className={`${quickSale ? "h-12" : "min-h-[44px]"} ${formErrors.transaction_date ? "border-destructive" : ""}`}
+          />
+          {formErrors.transaction_date && (
+            <p className="text-destructive text-xs">{formErrors.transaction_date}</p>
+          )}
+          {isBackdated && !formErrors.transaction_date && (
+            <p className="text-muted-foreground text-xs">
+              Mundur ke{" "}
+              {new Date(wibNoonISO(transactionDate)).toLocaleDateString("id-ID", {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+                timeZone: "Asia/Jakarta",
+              })}{" "}
+              — masuk laporan tanggal itu
+            </p>
+          )}
+        </div>
+      )}
 
       {quickSale && !isEdit && (
         <p className="text-xs text-muted-foreground">

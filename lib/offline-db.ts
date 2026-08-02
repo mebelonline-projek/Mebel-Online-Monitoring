@@ -12,6 +12,7 @@ export interface PendingTransaction {
     payment_type: "CASH" | "DP";
     payment_method?: "TUNAI" | "TRANSFER";
     dp_amount: number;
+    transaction_date?: string;
     items?: Array<{
       product_id?: string;
       product_name: string;

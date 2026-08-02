@@ -20,6 +20,7 @@ import {
   getWibMonthEnd,
   parseWibDate,
   wibEndISO,
+  wibNoonISO,
   wibStartISO,
   wibToDate,
   type PeriodType,
@@ -140,6 +141,11 @@ export async function createTransaction(
     const data = parsed.data;
     const isCash = data.payment_type === "CASH";
     const status = isCash ? "LUNAS" : "DP";
+    const businessDate =
+      data.transaction_date && data.transaction_date.length > 0
+        ? data.transaction_date
+        : getWibDateString();
+    const businessTimestamp = wibNoonISO(businessDate);
 
     const itemsTotal =
       data.items && data.items.length > 0
@@ -223,6 +229,7 @@ export async function createTransaction(
         status,
         fulfillment_status: "MENUNGGU",
         created_by: user.id,
+        created_at: businessTimestamp,
       })
       .select("id, transaction_number")
       .maybeSingle();
@@ -289,6 +296,7 @@ export async function createTransaction(
         method: paymentMethod,
         note: isCash ? "Pembayaran Lunas" : "Uang Muka (DP)",
         created_by: user.id,
+        payment_date: businessTimestamp,
       });
 
     if (payError) {
@@ -301,11 +309,17 @@ export async function createTransaction(
     revalidateTag(CACHE_TAGS.transactions, { expire: 0 });
     revalidateDashboardViews();
 
+    const today = getWibDateString();
+    const backdateNote =
+      businessDate !== today
+        ? ` · tanggal ${new Date(businessTimestamp).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" })}`
+        : "";
+
     return {
       success: true,
       message: isCash
-        ? `Transaksi ${transaction.transaction_number} berhasil dibuat (LUNAS)`
-        : `Transaksi ${transaction.transaction_number} berhasil dibuat (DP Rp ${data.dp_amount.toLocaleString("id-ID")})`,
+        ? `Transaksi ${transaction.transaction_number} berhasil dibuat (LUNAS)${backdateNote}`
+        : `Transaksi ${transaction.transaction_number} berhasil dibuat (DP Rp ${data.dp_amount.toLocaleString("id-ID")})${backdateNote}`,
       data: { id: transaction.id, transaction_number: transaction.transaction_number },
     };
   } catch (error) {
@@ -1512,7 +1526,7 @@ export async function deleteInvoice(id: string): Promise<ActionState> {
 //    Prev = periode SEBELUMNYA (kemarin / minggu lalu / bulan lalu / tahun lalu)
 //    Chart = rentang penuh (30h / 12w / 12m / 5y)
 //
-// 🗂️ Cache: unstable_cache 5 menit, invalidate via revalidateTag("dashboard")
+// 🗂️ Agregat dashboard selalu dihitung ulang (force-dynamic + tulis dari SPA)
 // ============================================================
 
 export interface DashboardMonthlyData {
@@ -1726,7 +1740,7 @@ function computePeriodStat(
   return { revenue, hpp, grossProfit, operationalCosts, netProfit, netMargin, txCount };
 }
 
-// ── Core dashboard logic — admin client (tanpa cookies) agar unstable_cache efektif ──
+// ── Core dashboard logic — admin client (tanpa cookies); auth di luar ──
 async function computeDashboardStats(period: PeriodType): Promise<DashboardStats> {
   const supabase = createAdminClient();
   const today = getWibDateString();
@@ -1862,18 +1876,7 @@ async function computeDashboardStats(period: PeriodType): Promise<DashboardStats
   };
 }
 
-// ⚡ Cached compute — admin client (tanpa cookies). Auth/role WAJIB di luar ini.
-// period masuk keyParts + args agar tiap filter cache terpisah.
-function getCachedDashboardStats(period: PeriodType): Promise<DashboardStats> {
-  const cached = unstable_cache(
-    () => computeDashboardStats(period),
-    ["dashboard-stats", period],
-    { revalidate: 60, tags: [CACHE_TAGS.dashboard] }
-  );
-  return cached();
-}
-
-/** Owner-only entry: cek auth di luar cache, baca agregat via cache. */
+/** Owner-only entry: auth di luar; agregat selalu segar (SPA/Next berbagi DB). */
 export async function getDashboardStats(period: PeriodType): Promise<DashboardStats> {
   const user = await getCurrentUser();
   if (!user) throw new Error("Anda harus login");
@@ -1883,7 +1886,9 @@ export async function getDashboardStats(period: PeriodType): Promise<DashboardSt
     throw new Error("Hanya Owner yang bisa melihat dashboard");
   }
 
-  return getCachedDashboardStats(period);
+  // Tanpa unstable_cache: tulis dari SPA tidak memanggil revalidateTag,
+  // cache 60s membuat KPI keuangan stale sementara list transaksi sudah update.
+  return computeDashboardStats(period);
 }
 
 // ============================================================

@@ -31,6 +31,11 @@ export function wibEndISO(dateStr: string): string {
   return `${dateStr}T23:59:59.999+07:00`;
 }
 
+/** Siang hari WIB — timestamp bisnis stabil untuk created_at / payment_date */
+export function wibNoonISO(dateStr: string): string {
+  return `${dateStr}T12:00:00+07:00`;
+}
+
 export function wibToDate(isoWib: string): Date {
   return new Date(isoWib);
 }
@@ -40,6 +45,33 @@ export function addWibDays(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T12:00:00+07:00`);
   d.setUTCDate(d.getUTCDate() + days);
   return getWibDateString(d);
+}
+
+/** Batas mundur tanggal transaksi (hari) */
+export const TRANSACTION_DATE_MAX_LOOKBACK_DAYS = 365;
+
+/** Hari ini + batas minimum tanggal transaksi (WIB) */
+export function getTransactionDateBounds(reference: Date = new Date()): {
+  today: string;
+  min: string;
+} {
+  const today = getWibDateString(reference);
+  return {
+    today,
+    min: addWibDays(today, -TRANSACTION_DATE_MAX_LOOKBACK_DAYS),
+  };
+}
+
+/** True jika YYYY-MM-DD dalam rentang [hari ini − lookback, hari ini] WIB */
+export function isWibDateInAllowedRange(
+  dateStr: string,
+  lookbackDays: number = TRANSACTION_DATE_MAX_LOOKBACK_DAYS,
+  reference: Date = new Date()
+): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  const today = getWibDateString(reference);
+  const min = addWibDays(today, -lookbackDays);
+  return dateStr >= min && dateStr <= today;
 }
 
 function getWibWeekday(dateStr: string): number {

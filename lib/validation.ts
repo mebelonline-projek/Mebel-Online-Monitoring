@@ -5,6 +5,10 @@
 // ============================================================
 
 import { z } from "zod";
+import {
+  TRANSACTION_DATE_MAX_LOOKBACK_DAYS,
+  isWibDateInAllowedRange,
+} from "@/lib/date-utils";
 
 // --- Common fields ---
 export const idSchema = z.string().min(1, "ID wajib diisi");
@@ -112,9 +116,23 @@ export const transactionItemSchema = z.object({
 
 export type TransactionItemFormValues = z.infer<typeof transactionItemSchema>;
 
-export const transactionCreateSchema = transactionSchema.extend({
-  items: z.array(transactionItemSchema).optional(),
-});
+export const transactionCreateSchema = transactionSchema
+  .extend({
+    items: z.array(transactionItemSchema).optional(),
+    /** Tanggal bisnis (YYYY-MM-DD). Kosong = hari ini WIB. Hanya untuk create. */
+    transaction_date: z.union([z.iso.date(), z.literal("")]).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const dateStr = data.transaction_date;
+    if (!dateStr) return;
+    if (!isWibDateInAllowedRange(dateStr, TRANSACTION_DATE_MAX_LOOKBACK_DAYS)) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Tanggal harus hari ini atau maksimal ${TRANSACTION_DATE_MAX_LOOKBACK_DAYS} hari ke belakang`,
+        path: ["transaction_date"],
+      });
+    }
+  });
 
 export const fulfillmentUpdateSchema = z.object({
   id: dbId(),
