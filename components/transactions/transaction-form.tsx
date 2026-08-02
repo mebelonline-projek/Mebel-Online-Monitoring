@@ -10,7 +10,11 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/formatters";
-import { transactionSchema, transactionCreateSchema } from "@/lib/validation";
+import {
+  transactionSchema,
+  transactionCreateSchema,
+  type TransactionItemFormValues,
+} from "@/lib/validation";
 import {
   LineItemsEditor,
   createDefaultLineItems,
@@ -212,14 +216,15 @@ export function TransactionForm({
         payment_type: parsed.data.payment_type,
         payment_method: parsed.data.payment_method,
         dp_amount: parsed.data.payment_type === "DP" ? parsed.data.dp_amount : 0,
-        items: "items" in parsed.data ? parsed.data.items : undefined,
+        items:
+          "items" in parsed.data && Array.isArray(parsed.data.items)
+            ? (parsed.data.items as TransactionItemFormValues[])
+            : undefined,
       };
 
       if (!isEdit) {
-        payload.transaction_date =
-          "transaction_date" in parsed.data && parsed.data.transaction_date
-            ? parsed.data.transaction_date
-            : transactionDate;
+        // Sudah divalidasi lewat transactionCreateSchema (schemaData.transaction_date)
+        payload.transaction_date = transactionDate;
       }
 
       if (isEdit && transactionId) {
